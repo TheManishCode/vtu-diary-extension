@@ -20,14 +20,20 @@ VTU Diary Studio is designed for reliable day-to-day diary operations with minim
 
 The screenshot names have been standardized to professional, descriptive filenames:
 
-- [docs/screenshots/dashboard-overview.png](docs/screenshots/dashboard-overview.png)
-- [docs/screenshots/bulk-upload-and-live-logs.png](docs/screenshots/bulk-upload-and-live-logs.png)
+- [docs/screenshots/dashboard-profile-overrides.png](docs/screenshots/dashboard-profile-overrides.png)
+- [docs/screenshots/bulk-upload-live-logs.png](docs/screenshots/bulk-upload-live-logs.png)
+- [docs/screenshots/pdf-export-preview.png](docs/screenshots/pdf-export-preview.png)
 
-> Place your two provided screenshots at the paths above so they render on GitHub.
+![Dashboard and Profile Overrides](docs/screenshots/dashboard-profile-overrides.png)
 
-![Dashboard Overview](docs/screenshots/dashboard-overview.png)
+![Bulk Upload and Live Logs](docs/screenshots/bulk-upload-live-logs.png)
 
-![Bulk Upload and Live Logs](docs/screenshots/bulk-upload-and-live-logs.png)
+![Generated PDF Export Preview](docs/screenshots/pdf-export-preview.png)
+
+## Example JSON Download
+
+- Repo file: [examples/2026-04-14.json](examples/2026-04-14.json)
+- Direct download: [Download 2026-04-14.json](https://github.com/TheManishCode/vtu-diary-extension/raw/main/examples/2026-04-14.json)
 
 ## Core Capabilities
 
