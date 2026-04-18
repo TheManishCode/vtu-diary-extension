@@ -24,9 +24,10 @@ The screenshot names have been standardized to professional, descriptive filenam
 - [docs/screenshots/bulk-upload-live-logs.png](docs/screenshots/bulk-upload-live-logs.png)
 - [docs/screenshots/pdf-export-preview.png](docs/screenshots/pdf-export-preview.png)
 
-![Dashboard and Profile Overrides](docs/screenshots/dashboard-profile-overrides.png)
-
-![Bulk Upload and Live Logs](docs/screenshots/bulk-upload-live-logs.png)
+<p align="center">
+  <img src="docs/screenshots/dashboard-profile-overrides.png" alt="Dashboard and Profile Overrides" width="49%" />
+  <img src="docs/screenshots/bulk-upload-live-logs.png" alt="Bulk Upload and Live Logs" width="49%" />
+</p>
 
 ![Generated PDF Export Preview](docs/screenshots/pdf-export-preview.png)
 
