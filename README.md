@@ -19,8 +19,8 @@ VTU Diary Studio is designed for reliable day-to-day diary operations with minim
 ## Screenshots
 
 <p align="center">
-  <img src="docs/screenshots/dashboard-profile-overrides.png" alt="Dashboard and Profile Overrides" width="48%" height="560" />
-  <img src="docs/screenshots/bulk-upload-live-logs.png" alt="Bulk Upload and Live Logs" width="48%" height="560" />
+  <img src="docs/screenshots/dashboard-profile-overrides.png" alt="Dashboard and Profile Overrides" width="48%" />
+  <img src="docs/screenshots/bulk-upload-live-logs.png" alt="Bulk Upload and Live Logs" width="48%" />
 </p>
 
 ![Generated PDF Export Preview](docs/screenshots/pdf-export-preview.png)
