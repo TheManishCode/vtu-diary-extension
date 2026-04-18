@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    :root {
+      --bg-1: #f6fbff;
+      --bg-2: #edf8f0;
+      --card: rgba(255, 255, 255, 0.9);
+      --text: #11222f;
+      --muted: #4e677a;
+      --line: #d7e6f2;
+      --primary: #0a7f6f;
+      --primary-strong: #08685b;
+      --secondary: #ecf4fb;
+      --secondary-text: #17344c;
+      --accent: #ffb703;
+      --success-bg: #e9f8f0;
+      --success-text: #17663d;
+      --warn-bg: #fff6e8;
+      --warn-text: #8c5a00;
+      --error-bg: #feefef;
+      --error-text: #a72626;
+      --info-bg: #eef7ff;
+      --info-text: #0f4f83;
+      --shadow-soft: 0 18px 38px rgba(9, 29, 45, 0.12);
+      --shadow-card: 0 10px 24px rgba(10, 34, 50, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      width: 100%;
+      min-width: 320px;
+      max-width: 500px;
+      min-height: 100vh;
+      padding: 10px;
+      background:
+        radial-gradient(120% 80% at 20% 0%, #d7f2ea 0%, transparent 55%),
+        radial-gradient(100% 70% at 100% 0%, #d8ebff 0%, transparent 52%),
+        linear-gradient(145deg, var(--bg-1), var(--bg-2));
+      color: var(--text);
+      font-family: "Manrope", "Nunito Sans", "Trebuchet MS", sans-serif;
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    body::before,
+    body::after {
+      content: "";
+      position: fixed;
+      z-index: -1;
+      border-radius: 999px;
+      filter: blur(2px);
+      opacity: 0.55;
+      pointer-events: none;
+    }
+
+    body::before {
+      width: 220px;
+      height: 220px;
+      left: -70px;
+      top: -90px;
+      background: radial-gradient(circle, #7ed6c4, rgba(126, 214, 196, 0.1));
+    }
+
+    body::after {
+      width: 240px;
+      height: 240px;
+      right: -95px;
+      top: -80px;
+      background: radial-gradient(circle, #9ec9ff, rgba(158, 201, 255, 0.1));
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid rgba(255, 255, 255, 0.8);
+      backdrop-filter: blur(10px);
+      border-radius: 18px;
+      padding: 14px;
+      box-shadow: var(--shadow-soft);
+      animation: liftIn 260ms ease-out;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+
+    .title {
+      margin: 0;
+      font-size: 17px;
+      font-weight: 800;
+      letter-spacing: 0.2px;
+    }
+
+    .subtitle {
+      margin: 3px 0 0;
+      color: var(--muted);
+      font-size: 11.5px;
+    }
+
+    .status-pill {
+      border-radius: 999px;
+      padding: 6px 11px;
+      font-size: 11px;
+      font-weight: 700;
+      background: #eff6ff;
+      color: #2b4f6d;
+      white-space: nowrap;
+      border: 1px solid #d6e7f7;
+    }
+
+    .status-pill.busy {
+      background: #e8faf7;
+      color: #0b665a;
+      border-color: #bfeee7;
+    }
+
+    .hero {
+      border-radius: 14px;
+      padding: 10px 11px;
+      margin-bottom: 10px;
+      background: linear-gradient(125deg, rgba(10, 127, 111, 0.1), rgba(255, 183, 3, 0.12));
+      border: 1px solid rgba(10, 127, 111, 0.16);
+      font-size: 11.5px;
+      color: #19425f;
+      line-height: 1.35;
+    }
+
+    .hero-actions {
+      margin-top: 9px;
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 7px;
+    }
+
+    .section {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px;
+      margin-bottom: 10px;
+      background: #fafdff;
+      box-shadow: var(--shadow-card);
+      opacity: 0;
+      transform: translateY(8px);
+      animation: reveal 320ms ease-out forwards;
+    }
+
+    .section:nth-of-type(1) { animation-delay: 40ms; }
+    .section:nth-of-type(2) { animation-delay: 80ms; }
+    .section:nth-of-type(3) { animation-delay: 120ms; }
+
+    @keyframes liftIn {
+      from {
+        opacity: 0;
+        transform: translateY(10px) scale(0.99);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+
+    @keyframes reveal {
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .section h4 {
+      margin: 0 0 8px;
+      font-size: 11.5px;
+      color: #254057;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .field label {
+      display: block;
+      font-size: 11px;
+      margin-bottom: 3px;
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .field input {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      padding: 8px 9px;
+      font-size: 12px;
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.95);
+      transition: border-color 120ms ease, box-shadow 120ms ease;
+    }
+
+    .field input:focus {
+      outline: none;
+      border-color: #74b9d9;
+      box-shadow: 0 0 0 3px rgba(11, 108, 196, 0.13);
+    }
+
+    .actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .actions > button {
+      width: 100%;
+    }
+
+    button {
+      border: none;
+      border-radius: 10px;
+      padding: 10px 8px;
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 0.15px;
+      cursor: pointer;
+      transition: transform 100ms ease, filter 120ms ease, opacity 120ms ease;
+    }
+
+    button:active {
+      transform: translateY(1px);
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.6;
+    }
+
+    .btn-primary {
+      background: linear-gradient(140deg, var(--primary), #0b6d87);
+      color: #fff;
+      box-shadow: 0 8px 14px rgba(10, 127, 111, 0.25);
+    }
+
+    .btn-primary:hover {
+      filter: brightness(1.02);
+    }
+
+    .btn-secondary {
+      background: var(--secondary);
+      color: var(--secondary-text);
+      border: 1px solid var(--line);
+    }
+
+    .hint {
+      margin-top: 7px;
+      font-size: 11px;
+      color: #3b5870;
+      line-height: 1.35;
+    }
+
+    .log-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+
+    .log-toolbar button {
+      padding: 5px 8px;
+      font-size: 11px;
+      border-radius: 7px;
+      background: var(--secondary);
+      color: var(--secondary-text);
+      border: 1px solid var(--line);
+    }
+
+    #log {
+      margin-top: 2px;
+      max-height: 210px;
+      overflow-y: auto;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: #ffffff;
+      padding: 7px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .log-item {
+      border-radius: 8px;
+      padding: 6px 7px;
+      font-size: 11.5px;
+      line-height: 1.35;
+      word-break: break-word;
+    }
+
+    .log-meta {
+      display: block;
+      font-size: 10px;
+      opacity: 0.75;
+      margin-bottom: 2px;
+    }
+
+    .log-info {
+      background: var(--info-bg);
+      color: var(--info-text);
+    }
+
+    .log-success {
+      background: var(--success-bg);
+      color: var(--success-text);
+    }
+
+    .log-warn {
+      background: var(--warn-bg);
+      color: var(--warn-text);
+    }
+
+    .log-error {
+      background: var(--error-bg);
+      color: var(--error-text);
+    }
+
+    .log-note {
+      background: #f4f8ff;
+      color: #385676;
+    }
+
+    @media (max-width: 420px) {
+      body {
+        width: 100%;
+        padding: 10px;
+      }
+
+      .card {
+        border-radius: 14px;
+      }
+
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      .actions {
+        grid-template-columns: 1fr;
+      }
+
+      .title {
+        font-size: 15px;
+      }
+
+      .subtitle {
+        font-size: 11px;
+      }
+
+      button {
+        padding: 9px 8px;
+      }
+
+      #log {
+        max-height: 180px;
+      }
+    }
+
+    @media (max-width: 320px) {
+      .card {
+        padding: 10px;
+      }
+
+      .section {
+        padding: 8px;
+      }
+
+      .hero {
+        padding: 8px;
+      }
+
+      .status-pill {
+        padding: 5px 9px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="topbar">
+      <div>
+        <p class="title">VTU Diary Studio</p>
+        <p class="subtitle">Export and upload with API session</p>
+      </div>
+      <span id="statusPill" class="status-pill">Idle</span>
+    </div>
+
+    <div class="hero">
+      Production mode uses your active VTU session only. Operations continue in background and logs are restored when you reopen.
+      <div class="hero-actions">
+        <button id="openPersistent" class="btn-secondary" type="button">Open Persistent Workspace</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <h4>Profile Overrides</h4>
+      <div class="grid">
+        <div class="field">
+          <label for="name">Name</label>
+          <input id="name" type="text" placeholder="Your name" />
+        </div>
+        <div class="field">
+          <label for="usn">USN</label>
+          <input id="usn" type="text" placeholder="Your USN" />
+        </div>
+        <div class="field">
+          <label for="college">College</label>
+          <input id="college" type="text" placeholder="Your college" />
+        </div>
+        <div class="field">
+          <label for="internship">Internship</label>
+          <input id="internship" type="text" placeholder="Title/company" />
+        </div>
+      </div>
+      <div class="actions">
+        <button id="generate" class="btn-primary">Generate Diary</button>
+        <button id="saveProfile" class="btn-secondary">Save Profile</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <h4>Bulk Upload</h4>
+      <div class="field">
+        <label for="jsonFile">JSON file (array of entries)</label>
+        <input id="jsonFile" type="file" accept="application/json,.json" />
+      </div>
+      <div class="actions">
+        <button id="upload" class="btn-primary">Upload Entries</button>
+        <button id="clearFile" class="btn-secondary">Clear File</button>
+      </div>
+      <div class="actions" style="grid-template-columns: 1fr; margin-top: 8px;">
+        <button id="downloadExample" class="btn-secondary">Download Example JSON</button>
+      </div>
+      <p class="hint">Use the sample format. Required fields: Date (YYYY-MM-DD), Hours (number), Work Description (text). Learnings and Skills are optional.</p>
+    </div>
+
+    <div class="section" style="margin-bottom: 0;">
+      <div class="log-toolbar">
+        <h4 style="margin: 0;">Live Logs</h4>
+        <button id="clearLogs" type="button">Clear</button>
+      </div>
+      <div id="log"></div>
+    </div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

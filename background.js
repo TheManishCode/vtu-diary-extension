@@ -1,0 +1,1108 @@
+importScripts("lib/jspdf.umd.min.js");
+
+const { jsPDF } = self.jspdf;
+
+const VTU_WEB_HOST = "vtu.internyet.in";
+const VTU_API_HOST = "vtuapi.internyet.in";
+const VTU_DIARY_PATH_HINTS = [
+  "student-diary",
+  "create-diary-entry",
+  "diary-entries",
+  "edit-diary-entry"
+];
+
+let uploadInProgress = false;
+const LOG_STORAGE_KEY = "vtu_runtime_logs";
+const MAX_STORED_LOGS = 500;
+
+function getStoredLogs() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get([LOG_STORAGE_KEY], (result) => {
+      const logs = Array.isArray(result?.[LOG_STORAGE_KEY]) ? result[LOG_STORAGE_KEY] : [];
+      resolve(logs);
+    });
+  });
+}
+
+function setStoredLogs(logs) {
+  return new Promise((resolve) => {
+    chrome.storage.local.set({ [LOG_STORAGE_KEY]: logs }, () => {
+      resolve();
+    });
+  });
+}
+
+async function persistLog(text) {
+  const entryText = String(text || "").trim();
+  if (!entryText) {
+    return;
+  }
+
+  const current = await getStoredLogs();
+  current.push({ text: entryText, ts: Date.now() });
+  const trimmed = current.slice(-MAX_STORED_LOGS);
+  await setStoredLogs(trimmed);
+}
+
+function clearPersistedLogs() {
+  return setStoredLogs([]);
+}
+
+function send(text) {
+  void persistLog(text);
+  chrome.runtime.sendMessage({ type: "log", text, source: "background" }, () => {
+    void chrome.runtime.lastError;
+  });
+}
+
+function parseUrl(rawUrl) {
+  try {
+    return new URL(String(rawUrl || ""));
+  } catch (error) {
+    return null;
+  }
+}
+
+function getVtuTabContext(url) {
+  const parsed = parseUrl(url);
+  if (!parsed) {
+    return {
+      isSupportedHost: false,
+      isApiHost: false,
+      isDiaryPath: false
+    };
+  }
+
+  const host = parsed.hostname;
+  const isApiHost = host === VTU_API_HOST;
+  const isWebHost = host === VTU_WEB_HOST;
+  const isSupportedHost = isApiHost || isWebHost;
+
+  const fullPath = `${parsed.pathname}${parsed.search}${parsed.hash}`.toLowerCase();
+  const isDiaryPath = VTU_DIARY_PATH_HINTS.some((hint) => fullPath.includes(hint));
+
+  return {
+    isSupportedHost,
+    isApiHost,
+    isDiaryPath
+  };
+}
+
+function scoreUploadTab(tab) {
+  const ctx = getVtuTabContext(tab?.url);
+  if (!ctx.isSupportedHost) {
+    return -1;
+  }
+
+  let score = 0;
+  if (ctx.isApiHost) {
+    score += 100;
+  }
+  if (ctx.isDiaryPath) {
+    score += 100;
+  }
+  if (tab?.active) {
+    score += 10;
+  }
+  if (typeof tab?.lastAccessed === "number") {
+    score += Math.floor(tab.lastAccessed / 1000000000);
+  }
+
+  return score;
+}
+
+async function resolveUploadTab() {
+  const activeInWindow = await chrome.tabs.query({ active: true, currentWindow: true });
+  const activeTab = activeInWindow?.[0] || null;
+  const activeContext = getVtuTabContext(activeTab?.url);
+  if (activeTab?.id && activeContext.isSupportedHost) {
+    return { tab: activeTab, fromFallback: false };
+  }
+
+  const allTabs = await chrome.tabs.query({});
+  const candidates = allTabs
+    .filter((t) => t && t.id)
+    .map((t) => ({ tab: t, score: scoreUploadTab(t) }))
+    .filter((x) => x.score >= 0)
+    .sort((a, b) => b.score - a.score);
+
+  if (!candidates.length) {
+    return { tab: activeTab, fromFallback: false };
+  }
+
+  return { tab: candidates[0].tab, fromFallback: true };
+}
+
+function chunk(arr, size) {
+  const out = [];
+  for (let i = 0; i < arr.length; i += size) {
+    out.push(arr.slice(i, i + size));
+  }
+  return out;
+}
+
+function safeText(value) {
+  return normalizeText(value);
+}
+
+function normalizeText(value) {
+  let text = String(value || "");
+
+  // Strip HTML tags that sometimes leak from API-rich text fields.
+  text = text.replace(/<[^>]*>/g, " ");
+
+  // Decode common entities to avoid literal entity noise in outputs.
+  text = text
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'");
+
+  // Normalize unicode punctuation to plain ASCII for built-in jsPDF fonts.
+  text = text
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2013\u2014]/g, "-")
+    .replace(/\u2026/g, "...")
+    .replace(/[\u00A0\u200B-\u200D\uFEFF]/g, " ");
+
+  // Drop combining marks and unsupported high unicode that prints as garbage in PDF.
+  text = text.normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
+  text = text.replace(/[^\x09\x0A\x0D\x20-\x7E]/g, " ");
+
+  return text.replace(/\s+/g, " ").trim();
+}
+
+function escapeHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function generateLearning(text) {
+  const clean = normalizeText(text);
+  if (!clean) {
+    return "Improved understanding of practical concepts.";
+  }
+
+  // Use first meaningful sentence when possible for cleaner summary text.
+  const firstSentence = clean.split(/[.!?]/).map((s) => s.trim()).find(Boolean) || clean;
+  return "Gained practical understanding of " + firstSentence.slice(0, 140);
+}
+
+function normalizeProfile(profile) {
+  return {
+    name: safeText(profile?.name) || "N/A",
+    usn: safeText(profile?.usn) || "N/A",
+    college: safeText(profile?.college) || "N/A",
+    internship: safeText(profile?.internship) || "Bharat Unnati AI Fellowship"
+  };
+}
+
+function mergeProfiles(fetchedProfile, userInput) {
+  const fetched = normalizeProfile(fetchedProfile || {});
+  const manual = {
+    name: safeText(userInput?.name),
+    usn: safeText(userInput?.usn),
+    college: safeText(userInput?.college),
+    internship: safeText(userInput?.internship)
+  };
+
+  return normalizeProfile({
+    name: manual.name || fetched.name,
+    usn: manual.usn || fetched.usn,
+    college: manual.college || fetched.college,
+    internship: manual.internship || fetched.internship
+  });
+}
+
+function buildDocHtml(entries, profile) {
+  const pages = chunk(entries, 4);
+  const p = normalizeProfile(profile);
+
+  return `
+  <html>
+  <head>
+    <meta charset="UTF-8" />
+    <style>
+      body {
+        font-family: "Times New Roman";
+        margin: 0;
+        padding: 0;
+      }
+
+      .page {
+        padding: 30px;
+        page-break-after: always;
+      }
+
+      h1 {
+        text-align: center;
+        font-size: 16px;
+        margin: 0;
+      }
+
+      h2 {
+        text-align: center;
+        font-size: 14px;
+        margin: 5px 0 20px;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      th, td {
+        border: 1px solid black;
+        padding: 6px;
+        font-size: 11px;
+        vertical-align: top;
+      }
+
+      th {
+        text-align: center;
+        font-weight: bold;
+      }
+
+      .footer {
+        margin-top: 40px;
+        display: flex;
+        justify-content: space-between;
+        font-size: 11px;
+      }
+
+      .page-number {
+        text-align: center;
+        margin-top: 10px;
+        font-size: 10px;
+      }
+
+      .cover {
+        text-align: center;
+        padding: 80px 20px;
+      }
+
+      .cover h1 {
+        font-size: 20px;
+        margin-bottom: 20px;
+      }
+
+      .cover h2 {
+        font-size: 16px;
+        margin-bottom: 40px;
+      }
+
+      .cover p {
+        font-size: 14px;
+        margin: 10px 0;
+      }
+    </style>
+  </head>
+
+  <body>
+
+  <div class="page cover">
+    <h1>VISVESVARAYA TECHNOLOGICAL UNIVERSITY</h1>
+    <h2>INTERNSHIP DIARY</h2>
+
+    <p><b>Name:</b> ${escapeHtml(p.name)}</p>
+    <p><b>USN:</b> ${escapeHtml(p.usn)}</p>
+    <p><b>College:</b> ${escapeHtml(p.college)}</p>
+    <p><b>Internship:</b> ${escapeHtml(p.internship)}</p>
+  </div>
+
+  ${pages.map((group, i) => `
+    <div class="page">
+
+      <h1>VISVESVARAYA TECHNOLOGICAL UNIVERSITY</h1>
+      <h2>INTERNSHIP DIARY</h2>
+
+      <table>
+        <tr>
+          <th>Date</th>
+          <th>Hours</th>
+          <th>Work Summary</th>
+          <th>Learning Outcome</th>
+        </tr>
+
+        ${group.map((e) => `
+          <tr>
+            <td>${escapeHtml(e.date)}</td>
+            <td>${escapeHtml(e.hours)}</td>
+            <td>${escapeHtml(e.activity)}</td>
+            <td>${escapeHtml(e.learning || generateLearning(e.activity))}</td>
+          </tr>
+        `).join("")}
+
+      </table>
+
+      <div class="footer">
+        <div>Signature of External Coordinator</div>
+        <div>Signature of Internship Coordinator</div>
+      </div>
+
+      <div class="page-number">
+        Page ${i + 1} of ${pages.length}
+      </div>
+
+    </div>
+  `).join("")}
+
+  </body>
+  </html>
+  `;
+}
+
+function drawPdf(entries, profile) {
+  const p = normalizeProfile(profile);
+  const doc = new jsPDF("p", "mm", "a4");
+
+  function centerText(text, y, size, bold) {
+    doc.setFont("times", bold ? "bold" : "normal");
+    doc.setFontSize(size);
+    doc.text(String(text || ""), 105, y, { align: "center" });
+  }
+
+  function drawCellText(text, x, y, w, h, fontSize) {
+    const content = safeText(text) || "-";
+    doc.setFont("times", "normal");
+    doc.setFontSize(fontSize);
+    const lines = doc.splitTextToSize(content, w - 3);
+    const maxLines = Math.max(1, Math.floor((h - 4) / 4.5));
+    doc.text(lines.slice(0, maxLines), x + 1.5, y + 4);
+  }
+
+  centerText("VISVESVARAYA TECHNOLOGICAL UNIVERSITY", 45, 18, true);
+  centerText("INTERNSHIP DIARY", 58, 15, true);
+  doc.setFont("times", "normal");
+  doc.setFontSize(13);
+  doc.text(`Name: ${p.name}`, 30, 95);
+  doc.text(`USN: ${p.usn}`, 30, 108);
+  doc.text(`College: ${p.college}`, 30, 121);
+  doc.text(`Internship: ${p.internship}`, 30, 134);
+
+  const pages = chunk(entries, 4);
+  const colWidths = [28, 20, 71, 71];
+  const tableX = 10;
+  const tableTop = 34;
+  const headerH = 10;
+  const rowH = 34;
+
+  pages.forEach((group, i) => {
+    doc.addPage();
+
+    centerText("VISVESVARAYA TECHNOLOGICAL UNIVERSITY", 14, 13, true);
+    centerText("INTERNSHIP DIARY", 21, 12, true);
+
+    const headers = ["Date", "Hours", "Work Summary", "Learning Outcome"];
+    let x = tableX;
+
+    for (let c = 0; c < 4; c += 1) {
+      doc.rect(x, tableTop, colWidths[c], headerH);
+      doc.setFont("times", "bold");
+      doc.setFontSize(10);
+      doc.text(headers[c], x + colWidths[c] / 2, tableTop + 6.5, { align: "center" });
+      x += colWidths[c];
+    }
+
+    for (let r = 0; r < 4; r += 1) {
+      const y = tableTop + headerH + r * rowH;
+      x = tableX;
+      for (let c = 0; c < 4; c += 1) {
+        doc.rect(x, y, colWidths[c], rowH);
+        x += colWidths[c];
+      }
+
+      const e = group[r];
+      if (!e) {
+        continue;
+      }
+
+      drawCellText(e.date, tableX, y, colWidths[0], rowH, 10);
+      drawCellText(e.hours, tableX + colWidths[0], y, colWidths[1], rowH, 10);
+      drawCellText(e.activity, tableX + colWidths[0] + colWidths[1], y, colWidths[2], rowH, 9);
+      drawCellText(e.learning || generateLearning(e.activity), tableX + colWidths[0] + colWidths[1] + colWidths[2], y, colWidths[3], rowH, 9);
+    }
+
+    doc.setFont("times", "normal");
+    doc.setFontSize(10);
+    doc.text("Signature of External Coordinator", 10, 252);
+    doc.text("Signature of Internship Coordinator", 200, 252, { align: "right" });
+
+    doc.setFontSize(9);
+    doc.text(`Page ${i + 1} of ${pages.length}`, 105, 286, { align: "center" });
+  });
+
+  return doc;
+}
+
+async function downloadPdf(entries, profile) {
+  const doc = drawPdf(entries, profile);
+  const pdfDataUrl = doc.output("datauristring");
+
+  await chrome.downloads.download({
+    url: pdfDataUrl,
+    filename: "Internship_Diary.pdf",
+    saveAs: false,
+    conflictAction: "uniquify"
+  });
+}
+
+async function downloadDoc(entries, profile) {
+  const html = buildDocHtml(entries, profile);
+  const docData = "\ufeff" + html;
+  const docDataUrl = "data:application/msword;charset=utf-8," + encodeURIComponent(docData);
+
+  await chrome.downloads.download({
+    url: docDataUrl,
+    filename: "Internship_Diary.doc",
+    saveAs: false,
+    conflictAction: "uniquify"
+  });
+}
+
+function normalizeUploadEntries(rawEntries) {
+  const valid = [];
+  const rejected = [];
+
+  const sourceEntries = Array.isArray(rawEntries)
+    ? rawEntries
+    : (rawEntries && typeof rawEntries === "object" ? [rawEntries] : null);
+
+  if (!sourceEntries) {
+    return { valid, rejected: [{ index: 0, reason: "Payload must be an object or array" }] };
+  }
+
+  sourceEntries.forEach((item, index) => {
+    if (!item || typeof item !== "object") {
+      rejected.push({ index: index + 1, reason: "Entry must be an object" });
+      return;
+    }
+
+    const date = normalizeText(item.date || item.Date || "");
+    const hours = normalizeText(item.hours || item.Hours || item.hours_worked || "");
+
+    const workDescription = normalizeText(
+      item.description ||
+      item.activity ||
+      item.work_description ||
+      item.workDescription ||
+      item["Work Description"] ||
+      ""
+    );
+    const learnings = normalizeText(item.learnings || item.Learnings || "");
+
+    const skillsRaw = item.skills || item.Skills || [];
+    const skillsList = Array.isArray(skillsRaw)
+      ? skillsRaw.map((s) => normalizeText(s)).filter(Boolean)
+      : normalizeText(skillsRaw)
+        ? [normalizeText(skillsRaw)]
+        : [];
+
+    const description = workDescription;
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      rejected.push({ index: index + 1, reason: "Date must be YYYY-MM-DD" });
+      return;
+    }
+
+    const hoursNum = Number(hours);
+    if (!Number.isFinite(hoursNum) || hoursNum <= 0 || hoursNum > 24) {
+      rejected.push({ index: index + 1, reason: "Hours must be a number between 1 and 24" });
+      return;
+    }
+
+    if (!description) {
+      rejected.push({ index: index + 1, reason: "Description (work summary) is required" });
+      return;
+    }
+
+    // Fallback learnings text if not provided
+    const learningsText = learnings || ("Gained practical understanding of " + description.slice(0, 120));
+
+    valid.push({
+      date,
+      hours: hoursNum,
+      description,
+      learnings: learningsText,
+      skills: skillsList
+    });
+  });
+
+  return { valid, rejected };
+}
+
+async function uploadEntries(tabId, rawEntries) {
+  const parsed = normalizeUploadEntries(rawEntries);
+
+  const receivedCount = Array.isArray(rawEntries)
+    ? rawEntries.length
+    : (rawEntries && typeof rawEntries === "object" ? 1 : 0);
+  send(`📦 Received ${receivedCount} upload rows`);
+
+  if (parsed.rejected.length) {
+    send(`⚠️ Skipped ${parsed.rejected.length} invalid rows`);
+    parsed.rejected.slice(0, 5).forEach((r) => {
+      send(`Row ${r.index}: ${r.reason}`);
+    });
+  }
+
+  if (!parsed.valid.length) {
+    send("❌ No valid entries to upload");
+    return;
+  }
+
+  send(`✅ Valid rows ready: ${parsed.valid.length}`);
+  send("📤 Starting upload to VTU API...");
+
+  const result = await chrome.scripting.executeScript({
+    target: { tabId },
+    args: [parsed.valid],
+    func: async (entries) => {
+      const logs = [];
+      const STORE_URL = "https://vtuapi.internyet.in/api/v1/student/internship-diaries/store";
+      const MAX_RETRIES = 2;
+
+      const clean = (v) => String(v || "").replace(/\s+/g, " ").trim();
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+      function rlog(text) {
+        logs.push(text);
+        try { chrome.runtime.sendMessage({ type: "log", text }); } catch (_) {}
+      }
+
+      async function fetchJson(url, timeoutMs = 6000) {
+        const controller = new AbortController();
+        const tid = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+          const res = await fetch(url, {
+            credentials: "include",
+            headers: { Accept: "application/json" },
+            signal: controller.signal
+          });
+          clearTimeout(tid);
+          if (!res.ok) return null;
+          return await res.json();
+        } catch (e) {
+          clearTimeout(tid);
+          return null;
+        }
+      }
+
+      rlog("🔍 Resolving required IDs...");
+      let internshipId = null;
+
+      try {
+        const candidates = [
+          window.__NEXT_DATA__,
+          window.__INITIAL_STATE__,
+          window.__APP_STATE__,
+          window.initialData
+        ];
+        for (const state of candidates) {
+          if (!state) continue;
+          const raw = JSON.stringify(state);
+          const m = raw.match(/"internship_id"\s*:\s*(\d+)/);
+          if (m) { internshipId = m[1]; break; }
+        }
+      } catch (_) {}
+
+      if (!internshipId) {
+        const metaEl = document.querySelector(
+          'meta[name="internship-id"], meta[name="internship_id"], [data-internship-id]'
+        );
+        if (metaEl) internshipId = metaEl.getAttribute("content") || metaEl.dataset.internshipId;
+      }
+
+      if (!internshipId) {
+        const DIARY_INTERNSHIP_NAME = "Bharat Unnati AI Fellowship";
+        const applyUrls = [
+          "https://vtuapi.internyet.in/api/v1/student/internship-applys?page=1&status=6",
+          "https://vtuapi.internyet.in/api/v1/student/internship-applys?page=1",
+          "https://vtuapi.internyet.in/api/v1/student/internship-applys"
+        ];
+        for (const url of applyUrls) {
+          const json = await fetchJson(url);
+          if (!json) continue;
+          const list = json?.data?.data || json?.data || [];
+          if (!Array.isArray(list) || list.length === 0) continue;
+          rlog(`  internship-applys → ${list.length} application(s) found`);
+          // Prefer the one whose name matches diary entries, else take first paid/active
+          let best = list.find(item =>
+            item.internship_payment_status === true &&
+            (item.internship_details?.name || "").includes(DIARY_INTERNSHIP_NAME)
+          ) || list.find(item => item.internship_payment_status === true)
+            || list[0];
+          if (best?.internship_id) {
+            internshipId = String(best.internship_id);
+            rlog(`  ✅ internship_id: ${internshipId} (${best.internship_details?.name || ""})`);
+            break;
+          }
+        }
+      }
+
+      rlog(`Internship ID: ${internshipId ?? "NOT FOUND"}`);
+      let skillIds = [];
+      const skillsJson = await fetchJson("https://vtuapi.internyet.in/api/v1/master/skills");
+      if (skillsJson) {
+        const skillsList = skillsJson?.data?.data || skillsJson?.data || [];
+        rlog(`Skills available: ${JSON.stringify(Array.isArray(skillsList) ? skillsList.slice(0, 5) : skillsList)}`);
+        if (Array.isArray(skillsList) && skillsList.length > 0) {
+          const aiKeywords = /python|ai|machine.?learn|data|automation|javascript|react/i;
+          const matched = skillsList.filter(s => aiKeywords.test(s.name || ""));
+          skillIds = matched.length > 0
+            ? matched.slice(0, 3).map(s => String(s.id))
+            : [String(skillsList[0].id)];
+        }
+      }
+      rlog(`Skill IDs: [${skillIds.join(", ") || "NOT FOUND"}]`);
+      const moodDefault = "5";
+
+      if (!internshipId) {
+        rlog("⚠️ internship_id still not found — will attempt upload anyway to get exact 422 detail");
+      }
+      
+      const summary = {
+        total: entries.length,
+        uploaded: 0,
+        failed: 0,
+        failures: [],
+        uploadedVia: null,
+        logs: logs
+      };
+
+      rlog(`Starting upload of ${entries.length} entry(ies)...`);
+
+      for (let i = 0; i < entries.length; i += 1) {
+        const e = entries[i];
+        rlog(`\n--- Processing entry ${i + 1}/${entries.length}: ${e.date} ---`);
+
+        const payload = {
+          date: e.date,
+          hours: Number(e.hours),
+          description: e.description,
+          learnings: e.learnings,
+          skill_ids: skillIds,
+          mood_slider: Number(moodDefault)
+        };
+        if (internshipId) {
+          payload.internship_id = internshipId;
+        }
+
+        let success = false;
+        let lastStatus = "network error";
+        let lastDetail = "no response";
+
+        for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
+          const attemptNo = attempt + 1;
+          try {
+            rlog(`📤 Attempt ${attemptNo}/${MAX_RETRIES + 1}`);
+
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+            const res = await fetch(STORE_URL, {
+              method: "POST",
+              credentials: "include",
+              headers: {
+                Accept: "application/json",
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify(payload),
+              signal: controller.signal
+            });
+
+            clearTimeout(timeoutId);
+
+            let responseText = "";
+            try {
+              responseText = clean((await res.text()).slice(0, 300));
+            } catch (_) {
+              responseText = "";
+            }
+
+            if (res.ok) {
+              success = true;
+              summary.uploaded += 1;
+              if (!summary.uploadedVia) {
+                summary.uploadedVia = `POST ${STORE_URL}`;
+              }
+              rlog(`✅ Success (${summary.uploaded}/${summary.total})`);
+              break;
+            }
+
+            lastStatus = String(res.status);
+            lastDetail = responseText || "no response";
+            rlog(`❌ Failed attempt ${attemptNo}: ${lastStatus} — ${lastDetail}`);
+          } catch (error) {
+            lastStatus = String(error?.message || "network error");
+            lastDetail = "exception";
+            rlog(`❌ Exception on attempt ${attemptNo}: ${lastStatus}`);
+          }
+
+          if (attempt < MAX_RETRIES) {
+            await sleep(500);
+          }
+        }
+
+        if (!success) {
+          summary.failed += 1;
+          summary.failures.push({
+            index: i + 1,
+            date: e.date,
+            status: lastStatus,
+            detail: lastDetail
+          });
+        }
+
+        rlog(`📊 Progress: ${summary.uploaded + summary.failed}/${summary.total} processed`);
+      }
+
+      rlog(`\n=== Upload Complete ===`);
+      rlog(`Uploaded: ${summary.uploaded}/${summary.total}`);
+      if (summary.failed > 0) {
+        rlog(`Failed: ${summary.failed}`);
+      }
+      
+      return summary;
+    }
+  });
+
+  const summary = result?.[0]?.result;
+  if (!summary) {
+    send("❌ Upload failed: no response from tab script");
+    return;
+  }
+
+  // Send all debug logs
+  if (summary.logs && Array.isArray(summary.logs)) {
+    summary.logs.forEach(log => {
+      if (log.trim()) send(log);
+    });
+  }
+
+  send(`✅ Uploaded: ${summary.uploaded}/${summary.total}`);
+  if (summary.uploadedVia) {
+    send(`🧩 Upload method: ${summary.uploadedVia}`);
+  }
+  if (summary.failed) {
+    send(`❌ Failed: ${summary.failed}`);
+    summary.failures.slice(0, 8).forEach((f) => {
+      send(`  Row ${f.index} (${f.date}): ${f.status} | ${f.detail}`);
+    });
+  }
+}
+
+// Runs inside VTU tab to use session cookies, returns both entries and profile.
+async function extractDataAndProfile(tabId) {
+  const result = await chrome.scripting.executeScript({
+    target: { tabId },
+    func: async () => {
+      const API_URL = "https://vtuapi.internyet.in/api/v1/student/internship-diaries";
+
+      function clean(v) {
+        return String(v || "").replace(/\s+/g, " ").trim();
+      }
+
+      function setIfEmpty(obj, key, value) {
+        let raw = value;
+        if (raw && typeof raw === "object") {
+          raw = raw.name || raw.title || raw.company_name || raw.organization || raw.value || "";
+        }
+
+        const val = clean(raw);
+        if (val && !obj[key]) {
+          obj[key] = val;
+        }
+      }
+
+      function extractFromObject(source, profile) {
+        if (!source || typeof source !== "object") {
+          return;
+        }
+
+        const buckets = [
+          source,
+          source.data,
+          source.student,
+          source.profile,
+          source.user,
+          source.internship,
+          source.college
+        ].filter(Boolean);
+
+        for (const obj of buckets) {
+          setIfEmpty(profile, "name", obj.name || obj.student_name || obj.full_name);
+          setIfEmpty(profile, "usn", obj.usn || obj.university_seat_number || obj.reg_no || obj.registration_number);
+          setIfEmpty(profile, "college", obj.college || obj.college_name || obj.institution || obj.institute);
+          setIfEmpty(profile, "internship", obj.internship || obj.company || obj.company_name || obj.organization);
+        }
+      }
+
+      function parseKeyValueText(text, profile) {
+        if (!text) {
+          return;
+        }
+
+        const t = String(text);
+        const nameMatch = t.match(/(?:^|\n)\s*(?:Student\s*Name|Name)\s*[:\-]\s*([^\n]+)/i);
+        const usnMatch = t.match(/(?:^|\n)\s*(?:USN|University\s*Seat\s*Number|Reg(?:istration)?\s*No)\s*[:\-]\s*([^\n]+)/i);
+        const collegeMatch = t.match(/(?:^|\n)\s*(?:College(?:\s*Name)?|Institution|Institute)\s*[:\-]\s*([^\n]+)/i);
+        const internshipMatch = t.match(/(?:^|\n)\s*(?:Internship|Company|Organization)\s*[:\-]\s*([^\n]+)/i);
+
+        setIfEmpty(profile, "name", nameMatch && nameMatch[1]);
+        setIfEmpty(profile, "usn", usnMatch && usnMatch[1]);
+        setIfEmpty(profile, "college", collegeMatch && collegeMatch[1]);
+        setIfEmpty(profile, "internship", internshipMatch && internshipMatch[1]);
+      }
+
+      function parseProfileFromDocument(doc, profile) {
+        try {
+          const rows = Array.from(doc.querySelectorAll("tr"));
+          for (const row of rows) {
+            const cells = Array.from(row.querySelectorAll("th,td")).map((c) => clean(c.textContent));
+            if (cells.length < 2) {
+              continue;
+            }
+
+            const key = cells[0].toLowerCase();
+            const value = cells[1];
+
+            if (/student\s*name|^name$/.test(key)) setIfEmpty(profile, "name", value);
+            if (/usn|seat\s*number|reg/.test(key)) setIfEmpty(profile, "usn", value);
+            if (/college|institution|institute/.test(key)) setIfEmpty(profile, "college", value);
+            if (/internship|company|organization/.test(key)) setIfEmpty(profile, "internship", value);
+          }
+
+          parseKeyValueText(doc.body ? doc.body.innerText : "", profile);
+        } catch (e) {
+          // Ignore parse failures for this page and continue fallbacks.
+        }
+      }
+
+      const profile = {};
+      const all = [];
+
+      let page = 1;
+      while (true) {
+        const res = await fetch(`${API_URL}?page=${page}`, {
+          credentials: "include",
+          headers: { Accept: "application/json" }
+        });
+
+        if (!res.ok) {
+          break;
+        }
+
+        const json = await res.json();
+        const entries = json.data?.data || json.data || [];
+
+        extractFromObject(json, profile);
+
+        if (!entries.length) {
+          break;
+        }
+
+        for (const e of entries) {
+          extractFromObject(e, profile);
+        }
+
+        all.push(...entries);
+
+        if (json.meta?.last_page && page >= json.meta.last_page) {
+          break;
+        }
+
+        page += 1;
+      }
+
+      parseProfileFromDocument(document, profile);
+
+      const profilePages = [
+        "/dashboard/student/profile",
+        "/dashboard/student/details",
+        "/dashboard/student/internship-details",
+        "/dashboard/student"
+      ];
+
+      for (const path of profilePages) {
+        if (profile.name && profile.usn && profile.college && profile.internship) {
+          break;
+        }
+
+        try {
+          const res = await fetch(path, { credentials: "include" });
+          if (!res.ok) {
+            continue;
+          }
+
+          const html = await res.text();
+          const doc = new DOMParser().parseFromString(html, "text/html");
+          parseProfileFromDocument(doc, profile);
+        } catch (e) {
+          // Ignore and try next source.
+        }
+      }
+
+      const profileApis = [
+        "https://vtuapi.internyet.in/api/v1/student/profile",
+        "https://vtuapi.internyet.in/api/v1/student/me",
+        "https://vtuapi.internyet.in/api/v1/student/details"
+      ];
+
+      for (const endpoint of profileApis) {
+        if (profile.name && profile.usn && profile.college && profile.internship) {
+          break;
+        }
+
+        try {
+          const res = await fetch(endpoint, {
+            credentials: "include",
+            headers: { Accept: "application/json" }
+          });
+          if (!res.ok) {
+            continue;
+          }
+
+          const json = await res.json();
+          extractFromObject(json, profile);
+        } catch (e) {
+          // Ignore and continue fallback chain.
+        }
+      }
+
+      return { entries: all, profile };
+    }
+  });
+
+  return result?.[0]?.result || { entries: [], profile: {} };
+}
+
+async function startExport(profileInput) {
+  try {
+    const tab = (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
+    if (!tab?.id) {
+      send("❌ No active tab");
+      return;
+    }
+
+    send("📡 Fetching data...");
+    const payload = await extractDataAndProfile(tab.id);
+    const raw = Array.isArray(payload?.entries) ? payload.entries : [];
+    const profile = mergeProfiles(payload?.profile || {}, profileInput || {});
+
+    send(`📊 Found ${raw.length} entries`);
+
+    if (!raw.length) {
+      send("❌ No entries (check login)");
+      return;
+    }
+
+    send(`👤 ${profile.name} | ${profile.usn}`);
+    send(`🏫 ${profile.college}`);
+
+    const entries = raw.map((e) => ({
+      date: normalizeText(e.date || e.created_at || "-"),
+      hours: normalizeText(e.hours || e.hours_worked || "7 hrs"),
+      activity: normalizeText(e.description || e.activity || ""),
+      learning: generateLearning(e.description || e.activity || "")
+    })).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+
+    send("📄 Generating PDF...");
+    await downloadPdf(entries, profile);
+
+    send("📝 Generating DOC...");
+    await downloadDoc(entries, profile);
+
+    send("✅ Done!");
+  } catch (e) {
+    send("❌ Error: " + (e?.message || "Unknown error"));
+  }
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg?.type === "log") {
+    if (msg?.source === "background") {
+      return false;
+    }
+    void persistLog(msg.text);
+    return false;
+  }
+
+  if (msg?.type === "get_logs") {
+    (async () => {
+      const logs = await getStoredLogs();
+      sendResponse({ ok: true, logs });
+    })().catch((error) => {
+      sendResponse({ ok: false, error: error?.message || "Could not fetch logs" });
+    });
+    return true;
+  }
+
+  if (msg?.type === "clear_logs") {
+    (async () => {
+      await clearPersistedLogs();
+      sendResponse({ ok: true });
+    })().catch((error) => {
+      sendResponse({ ok: false, error: error?.message || "Could not clear logs" });
+    });
+    return true;
+  }
+
+  return false;
+});
+
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg.type === "start") {
+    startExport(msg.profileInput);
+  }
+
+  if (msg.type === "upload_entries") {
+    (async () => {
+      if (uploadInProgress) {
+        send("⚠️ Upload already in progress. Please wait for completion.");
+        return;
+      }
+
+      uploadInProgress = true;
+      try {
+        const resolved = await resolveUploadTab();
+        const tab = resolved.tab;
+        if (!tab || !tab.id) {
+          send("❌ No active tab for upload");
+          return;
+        }
+
+        send(`🔎 Active tab URL: ${String(tab.url || "about:blank")}`);
+        const tabContext = getVtuTabContext(tab.url);
+
+        if (!tabContext.isSupportedHost) {
+          send("❌ Open the VTU diary page in the active tab before uploading");
+          return;
+        }
+
+        if (resolved.fromFallback) {
+          send("ℹ️ Active tab was not VTU. Using the most recent VTU tab for upload.");
+        }
+
+        if (!tabContext.isApiHost && !tabContext.isDiaryPath) {
+          send("⚠️ Active tab is VTU but not a recognized diary route; attempting upload anyway");
+        }
+
+        send("📤 Starting bulk upload...");
+        await uploadEntries(tab.id, msg.data);
+        send("✅ Upload flow completed");
+      } finally {
+        uploadInProgress = false;
+      }
+    })().catch((error) => {
+      send(`❌ Upload setup failed: ${error?.message || "Unknown error"}`);
+    });
+  }
+});
