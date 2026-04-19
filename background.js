@@ -558,16 +558,38 @@ async function uploadEntries(tabId, rawEntries) {
     return;
   }
 
-  send(`✅ Valid rows ready: ${parsed.valid.length}`);
+  const dedupedByDate = [];
+  const seenDates = new Set();
+  let duplicateDateRows = 0;
+
+  // Keep first occurrence per date to avoid duplicate writes and extra API traffic.
+  parsed.valid.forEach((entry) => {
+    if (seenDates.has(entry.date)) {
+      duplicateDateRows += 1;
+      return;
+    }
+    seenDates.add(entry.date);
+    dedupedByDate.push(entry);
+  });
+
+  if (duplicateDateRows > 0) {
+    send(`⚠️ Skipped ${duplicateDateRows} duplicate date row(s) from input`);
+  }
+
+  send(`✅ Valid rows ready: ${dedupedByDate.length}`);
   send("📤 Starting upload to VTU API...");
 
   const result = await chrome.scripting.executeScript({
     target: { tabId },
-    args: [parsed.valid],
+    args: [dedupedByDate],
     func: async (entries) => {
       const logs = [];
       const STORE_URL = "https://vtuapi.internyet.in/api/v1/student/internship-diaries/store";
+      const LIST_URL = "https://vtuapi.internyet.in/api/v1/student/internship-diaries";
       const MAX_RETRIES = 2;
+      const INTER_ENTRY_DELAY_MS = 2500;
+      const INTER_ENTRY_JITTER_MS = 700;
+      const BASE_RETRY_DELAY_MS = 900;
 
       const clean = (v) => String(v || "").replace(/\s+/g, " ").trim();
       const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -648,20 +670,144 @@ async function uploadEntries(tabId, rawEntries) {
       }
 
       rlog(`Internship ID: ${internshipId ?? "NOT FOUND"}`);
-      let skillIds = [];
+      let allSkillsList = [];
+      let fallbackSkillIds = [];
+      const skillByNormalizedName = new Map();
+      const skillByCompactName = new Map();
       const skillsJson = await fetchJson("https://vtuapi.internyet.in/api/v1/master/skills");
       if (skillsJson) {
         const skillsList = skillsJson?.data?.data || skillsJson?.data || [];
         rlog(`Skills available: ${JSON.stringify(Array.isArray(skillsList) ? skillsList.slice(0, 5) : skillsList)}`);
         if (Array.isArray(skillsList) && skillsList.length > 0) {
-          const aiKeywords = /python|ai|machine.?learn|data|automation|javascript|react/i;
-          const matched = skillsList.filter(s => aiKeywords.test(s.name || ""));
-          skillIds = matched.length > 0
-            ? matched.slice(0, 3).map(s => String(s.id))
+          allSkillsList = skillsList;
+
+          // Build deterministic lookup indexes for robust name->ID mapping.
+          skillsList.forEach((skill) => {
+            const normalized = normalizeSkillName(skill?.name || "");
+            const compact = normalized.replace(/\s+/g, "");
+            if (normalized && !skillByNormalizedName.has(normalized)) {
+              skillByNormalizedName.set(normalized, skill);
+            }
+            if (compact && !skillByCompactName.has(compact)) {
+              skillByCompactName.set(compact, skill);
+            }
+          });
+
+          // Prefer Python as default for this internship flow, then safe alternates.
+          const preferredFallbackNames = ["python", "machine learning", "javascript", "react"];
+          const picked = [];
+          preferredFallbackNames.forEach((name) => {
+            const found = skillByNormalizedName.get(normalizeSkillName(name));
+            if (found?.id) {
+              const id = String(found.id);
+              if (!picked.includes(id)) {
+                picked.push(id);
+              }
+            }
+          });
+
+          fallbackSkillIds = picked.length > 0
+            ? picked
             : [String(skillsList[0].id)];
         }
       }
-      rlog(`Skill IDs: [${skillIds.join(", ") || "NOT FOUND"}]`);
+
+      function normalizeSkillName(value) {
+        return clean(value).toLowerCase();
+      }
+
+      const skillAliases = {
+        python: ["python", "python programming", "python development"],
+        js: ["javascript"],
+        javascript: ["javascript", "js"],
+        ml: ["machine learning", "machinelearning"],
+        ai: ["artificial intelligence", "ai"]
+      };
+
+      function compactSkillName(value) {
+        return normalizeSkillName(value).replace(/\s+/g, "");
+      }
+
+      function expandedSkillTerms(desired) {
+        const base = normalizeSkillName(desired);
+        const alias = skillAliases[base] || [];
+        const all = [base, ...alias].map((x) => normalizeSkillName(x)).filter(Boolean);
+        return Array.from(new Set(all));
+      }
+
+      function resolveSkillIdsForEntry(entrySkills) {
+        const requested = Array.isArray(entrySkills)
+          ? entrySkills
+          : (entrySkills ? [entrySkills] : []);
+
+        const requestedNormalized = requested
+          .map((s) => normalizeSkillName(s))
+          .filter(Boolean);
+
+        if (requestedNormalized.length > 0 && allSkillsList.length > 0) {
+          const resolved = [];
+
+          for (const desired of requestedNormalized) {
+            const terms = expandedSkillTerms(desired);
+            let pick = null;
+
+            for (const term of terms) {
+              pick = skillByNormalizedName.get(term) || null;
+              if (pick) {
+                break;
+              }
+            }
+
+            if (!pick) {
+              for (const term of terms) {
+                const compactTerm = term.replace(/\s+/g, "");
+                pick = skillByCompactName.get(compactTerm) || null;
+                if (pick) {
+                  break;
+                }
+              }
+            }
+
+            if (!pick) {
+              for (const term of terms) {
+                const compactTerm = compactSkillName(term);
+                pick = allSkillsList.find((skill) => {
+                  const skillName = normalizeSkillName(skill.name);
+                  const compactName = compactSkillName(skill.name);
+                  return (
+                    skillName.includes(term) ||
+                    term.includes(skillName) ||
+                    compactName.includes(compactTerm) ||
+                    compactTerm.includes(compactName)
+                  );
+                });
+                if (pick) {
+                  break;
+                }
+              }
+            }
+
+            if (pick && pick.id) {
+              const id = String(pick.id);
+              if (!resolved.includes(id)) {
+                resolved.push(id);
+              }
+            }
+          }
+
+          if (resolved.length > 0) {
+            return resolved;
+          }
+
+          // Explicit skills were requested but none mapped; avoid injecting unrelated fallback skills.
+          rlog(`  ⚠️ Could not map requested skills: [${requestedNormalized.join(", ")}]. Sending empty skill list.`);
+          return [];
+        }
+
+        return fallbackSkillIds;
+      }
+
+      rlog(`Default Skill IDs: [${fallbackSkillIds.join(", ") || "NOT FOUND"}]`);
       const moodDefault = "5";
 
       if (!internshipId) {
@@ -673,22 +819,56 @@ async function uploadEntries(tabId, rawEntries) {
         uploaded: 0,
         failed: 0,
         failures: [],
-        uploadedVia: null,
-        logs: logs
+        uploadedVia: null
       };
 
+      rlog("🧩 Uploader build: 2026-04-19-ratelimit-resume-v3");
       rlog(`Starting upload of ${entries.length} entry(ies)...`);
+
+      const existingEntryByDate = new Map();
+      try {
+        const listRes = await fetch(LIST_URL, {
+          credentials: "include",
+          headers: { Accept: "application/json" }
+        });
+
+        if (listRes.ok) {
+          const listData = await listRes.json();
+          const diaryList = listData?.data?.data || listData?.data || [];
+          if (Array.isArray(diaryList)) {
+            diaryList.forEach((entry) => {
+              if (entry?.date && entry?.id) {
+                existingEntryByDate.set(String(entry.date), String(entry.id));
+              }
+            });
+            rlog(`📚 Loaded ${existingEntryByDate.size} existing diary date(s) in one request`);
+          }
+        } else {
+          rlog(`⚠️ Could not pre-load existing entries (HTTP ${listRes.status}). Continuing...`);
+        }
+      } catch (err) {
+        rlog(`⚠️ Could not pre-load existing entries: ${err?.message || "unknown error"}`);
+      }
 
       for (let i = 0; i < entries.length; i += 1) {
         const e = entries[i];
         rlog(`\n--- Processing entry ${i + 1}/${entries.length}: ${e.date} ---`);
+
+        const existingEntryId = existingEntryByDate.get(e.date) || null;
+        rlog(`🔍 Checking for existing entry on ${e.date}...`);
+        if (existingEntryId) {
+          rlog(`  📝 Found existing entry (ID: ${existingEntryId})`);
+        }
+
+        const entrySkillIds = resolveSkillIdsForEntry(e.skills);
+        rlog(`  🧠 Skills requested: [${(Array.isArray(e.skills) ? e.skills.join(", ") : "")}], resolved IDs: [${entrySkillIds.join(", ") || "NOT FOUND"}]`);
 
         const payload = {
           date: e.date,
           hours: Number(e.hours),
           description: e.description,
           learnings: e.learnings,
-          skill_ids: skillIds,
+          skill_ids: entrySkillIds,
           mood_slider: Number(moodDefault)
         };
         if (internshipId) {
@@ -698,56 +878,127 @@ async function uploadEntries(tabId, rawEntries) {
         let success = false;
         let lastStatus = "network error";
         let lastDetail = "no response";
+        let rateLimitPauseCount = 0;
+        const MAX_RATE_LIMIT_PAUSES_PER_ENTRY = 5;
+        const BASE_RATE_LIMIT_COOLDOWN_MS = 15000;
+
+        const requestTargets = existingEntryId
+          ? [
+              { method: "PATCH", url: `https://vtuapi.internyet.in/api/v1/student/internship-diaries/${existingEntryId}` },
+              { method: "PUT", url: `https://vtuapi.internyet.in/api/v1/student/internship-diaries/${existingEntryId}` },
+              { method: "PATCH", url: `https://vtuapi.internyet.in/api/v1/student/internship-diaries/update/${existingEntryId}` },
+              { method: "PUT", url: `https://vtuapi.internyet.in/api/v1/student/internship-diaries/update/${existingEntryId}` }
+            ]
+          : [
+              { method: "POST", url: STORE_URL }
+            ];
+
+        if (existingEntryId) {
+          rlog(`✏️ Existing entry found. Updating content for ${e.date}...`);
+        }
 
         for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
           const attemptNo = attempt + 1;
+          let rateLimitedThisAttempt = false;
           try {
             rlog(`📤 Attempt ${attemptNo}/${MAX_RETRIES + 1}`);
 
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 15000);
+            for (let targetIndex = 0; targetIndex < requestTargets.length; targetIndex += 1) {
+              const target = requestTargets[targetIndex];
+              const controller = new AbortController();
+              const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-            const res = await fetch(STORE_URL, {
-              method: "POST",
-              credentials: "include",
-              headers: {
-                Accept: "application/json",
-                "Content-Type": "application/json"
-              },
-              body: JSON.stringify(payload),
-              signal: controller.signal
-            });
+              const res = await fetch(target.url, {
+                method: target.method,
+                credentials: "include",
+                headers: {
+                  Accept: "application/json",
+                  "Content-Type": "application/json"
+                },
+                body: JSON.stringify(payload),
+                signal: controller.signal
+              });
 
-            clearTimeout(timeoutId);
+              clearTimeout(timeoutId);
 
-            let responseText = "";
-            try {
-              responseText = clean((await res.text()).slice(0, 300));
-            } catch (_) {
-              responseText = "";
+              let responseText = "";
+              try {
+                responseText = clean((await res.text()).slice(0, 300));
+              } catch (_) {
+                responseText = "";
+              }
+
+              if (res.ok) {
+                success = true;
+                summary.uploaded += 1;
+                if (!summary.uploadedVia) {
+                  summary.uploadedVia = `${target.method} ${target.url}`;
+                }
+                rlog(`✅ Success (${summary.uploaded}/${summary.total})`);
+                break;
+              }
+
+              lastStatus = String(res.status);
+              lastDetail = responseText || "no response";
+
+              if (res.status === 429) {
+                const retryAfterSec = Number(res.headers.get("Retry-After") || "0");
+                const waitMs = retryAfterSec > 0
+                  ? retryAfterSec * 1000
+                  : Math.min(12000, BASE_RETRY_DELAY_MS * Math.pow(2, attemptNo));
+                rlog(`⏳ Rate limited (429). Waiting ${Math.ceil(waitMs / 1000)}s before retry...`);
+                await sleep(waitMs);
+                rateLimitedThisAttempt = true;
+                break;
+              }
+
+              const isLastTarget = targetIndex === requestTargets.length - 1;
+              if (isLastTarget) {
+                rlog(`❌ Failed attempt ${attemptNo}: ${target.method} ${target.url} -> ${lastStatus} — ${lastDetail}`);
+              }
             }
 
-            if (res.ok) {
-              success = true;
-              summary.uploaded += 1;
-              if (!summary.uploadedVia) {
-                summary.uploadedVia = `POST ${STORE_URL}`;
-              }
-              rlog(`✅ Success (${summary.uploaded}/${summary.total})`);
+            if (success) {
               break;
             }
-
-            lastStatus = String(res.status);
-            lastDetail = responseText || "no response";
-            rlog(`❌ Failed attempt ${attemptNo}: ${lastStatus} — ${lastDetail}`);
           } catch (error) {
             lastStatus = String(error?.message || "network error");
             lastDetail = "exception";
             rlog(`❌ Exception on attempt ${attemptNo}: ${lastStatus}`);
           }
 
+          if (rateLimitedThisAttempt && attempt === MAX_RETRIES) {
+            rateLimitPauseCount += 1;
+
+            if (rateLimitPauseCount > MAX_RATE_LIMIT_PAUSES_PER_ENTRY) {
+              lastStatus = "429";
+              lastDetail = `rate limit persisted after ${MAX_RATE_LIMIT_PAUSES_PER_ENTRY} cooldown(s)`;
+              rlog("❌ Rate limit persisted for this entry after multiple cooldowns. Skipping this date and continuing.");
+              break;
+            }
+
+            const cooldownMs = Math.min(
+              120000,
+              BASE_RATE_LIMIT_COOLDOWN_MS * rateLimitPauseCount
+            );
+
+            rlog(
+              `⏸️ Rate limit persisted. Cooling down ${Math.ceil(cooldownMs / 1000)}s then resuming this entry... (${rateLimitPauseCount}/${MAX_RATE_LIMIT_PAUSES_PER_ENTRY})`
+            );
+            await sleep(cooldownMs);
+
+            // Restart attempts for the same entry after cooldown.
+            attempt = -1;
+            continue;
+          }
+
+          if (rateLimitedThisAttempt) {
+            // Already waited based on Retry-After / backoff inside the request loop.
+            continue;
+          }
+
           if (attempt < MAX_RETRIES) {
-            await sleep(500);
+            await sleep(BASE_RETRY_DELAY_MS);
           }
         }
 
@@ -762,6 +1013,8 @@ async function uploadEntries(tabId, rawEntries) {
         }
 
         rlog(`📊 Progress: ${summary.uploaded + summary.failed}/${summary.total} processed`);
+        const jitter = Math.floor(Math.random() * (INTER_ENTRY_JITTER_MS + 1));
+        await sleep(INTER_ENTRY_DELAY_MS + jitter);
       }
 
       rlog(`\n=== Upload Complete ===`);
@@ -778,13 +1031,6 @@ async function uploadEntries(tabId, rawEntries) {
   if (!summary) {
     send("❌ Upload failed: no response from tab script");
     return;
-  }
-
-  // Send all debug logs
-  if (summary.logs && Array.isArray(summary.logs)) {
-    summary.logs.forEach(log => {
-      if (log.trim()) send(log);
-    });
   }
 
   send(`✅ Uploaded: ${summary.uploaded}/${summary.total}`);
