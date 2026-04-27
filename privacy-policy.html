@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Privacy Policy | Diary Made Easy [VTU]</title>
+  <style>
+    :root {
+      --bg: #0b0b0b;
+      --panel: #141414;
+      --panel-2: #1a1a1a;
+      --line: #2a2a2a;
+      --text: #f4f4f4;
+      --muted: #b8b8b8;
+      --accent: #ff8a1f;
+      --accent-2: #ff5f00;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background:
+        radial-gradient(100% 100% at 0% 0%, rgba(255, 122, 0, 0.08) 0%, transparent 55%),
+        radial-gradient(100% 100% at 100% 0%, rgba(255, 95, 0, 0.08) 0%, transparent 50%),
+        linear-gradient(170deg, #080808, #111 45%, #0d0d0d);
+      color: var(--text);
+      font-family: "Segoe UI", Arial, sans-serif;
+      line-height: 1.65;
+    }
+
+    .wrap {
+      max-width: 920px;
+      margin: 0 auto;
+      padding: 40px 18px 56px;
+    }
+
+    .hero {
+      background: linear-gradient(160deg, var(--panel), var(--panel-2));
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 26px 24px;
+      box-shadow: 0 16px 32px rgba(0, 0, 0, 0.28);
+    }
+
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 1.3px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(28px, 4vw, 42px);
+      line-height: 1.15;
+    }
+
+    .updated {
+      margin: 10px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .card {
+      margin-top: 18px;
+      background: rgba(20, 20, 20, 0.92);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 22px 22px 18px;
+    }
+
+    h2 {
+      margin: 0 0 10px;
+      font-size: 20px;
+      color: #fff;
+    }
+
+    p, li {
+      color: var(--text);
+      font-size: 15px;
+    }
+
+    ul {
+      margin: 10px 0 0 22px;
+      padding: 0;
+    }
+
+    li {
+      margin: 6px 0;
+    }
+
+    .muted {
+      color: var(--muted);
+    }
+
+    .callout {
+      margin-top: 16px;
+      border-left: 4px solid var(--accent);
+      background: rgba(255, 122, 0, 0.08);
+      padding: 14px 16px;
+      border-radius: 12px;
+      color: #ffd9bf;
+    }
+
+    .footer {
+      margin-top: 22px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    a {
+      color: #ffb777;
+      text-decoration: none;
+    }
+
+    a:hover {
+      color: #ffd6b3;
+      text-decoration: underline;
+    }
+
+    .grid {
+      display: grid;
+      gap: 18px;
+      margin-top: 18px;
+    }
+
+    .section {
+      background: rgba(17, 17, 17, 0.88);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 20px 22px;
+    }
+
+    .badge-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid #343434;
+      background: #1a1a1a;
+      color: #f0f0f0;
+      border-radius: 999px;
+      padding: 7px 12px;
+      font-size: 13px;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      box-shadow: 0 0 12px rgba(255, 122, 0, 0.35);
+    }
+
+    @media (max-width: 640px) {
+      .wrap {
+        padding: 18px 10px 34px;
+      }
+
+      .hero,
+      .section,
+      .card {
+        padding: 18px 16px;
+        border-radius: 14px;
+      }
+
+      p, li {
+        font-size: 14px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="hero" aria-labelledby="title">
+      <p class="eyebrow">Privacy Policy</p>
+      <h1 id="title">Diary Made Easy [VTU]</h1>
+      <p class="updated">Last updated: April 27, 2026</p>
+      <div class="badge-row" aria-label="Policy highlights">
+        <span class="badge"><span class="dot"></span> Local-only storage</span>
+        <span class="badge"><span class="dot"></span> No analytics</span>
+        <span class="badge"><span class="dot"></span> User-click affiliate links</span>
+      </div>
+    </section>
+
+    <div class="grid">
+      <section class="section">
+        <h2>1. Overview</h2>
+        <p>
+          Diary Made Easy [VTU] is a Chrome extension designed to help VTU students export internship diary data,
+          generate PDF/DOC reports, and upload diary entries from JSON using the user’s active VTU session.
+        </p>
+        <p class="muted">
+          This policy explains what data the extension uses and how it is handled.
+        </p>
+      </section>
+
+      <section class="section">
+        <h2>2. Data the extension uses</h2>
+        <p>The extension may access and process the following data only for its core features:</p>
+        <ul>
+          <li>Profile override values entered by the user, such as name, USN, college, and internship name.</li>
+          <li>Runtime logs generated during export or upload operations.</li>
+          <li>Diary entry data retrieved from the authenticated VTU session when the user chooses to export.</li>
+          <li>JSON diary entry data that the user selects for bulk upload.</li>
+        </ul>
+      </section>
+
+      <section class="section">
+        <h2>3. How data is stored</h2>
+        <p>
+          Profile values and runtime logs are stored locally in Chrome extension storage on the user’s device.
+          The extension does not send this information to third-party analytics services.
+        </p>
+        <p>
+          The extension does not track browsing activity outside its core functionality.
+        </p>
+        <p>
+          Generated files such as PDF and DOC exports are downloaded to the user’s computer through the browser.
+        </p>
+      </section>
+
+      <section class="section">
+        <h2>4. Data sharing</h2>
+        <p>
+          The extension does not sell personal data. It does not share user data with advertising networks or analytics providers.
+        </p>
+        <p>
+          The extension communicates with VTU pages and VTU-related API endpoints only to perform the user-requested export and upload features.
+        </p>
+        <p>
+          The extension only uses permissions necessary for interacting with VTU pages and performing user-requested actions.
+        </p>
+      </section>
+
+      <section class="section">
+        <h2>5. Affiliate links</h2>
+        <p>
+          The popup may include optional affiliate links for recommended student tools. These links open only when the user clicks them.
+        </p>
+        <p>
+          Affiliate links are clearly labeled inside the extension UI. They do not auto-open, auto-redirect, or inject ads into VTU websites.
+        </p>
+      </section>
+
+      <section class="section">
+        <h2>6. User control</h2>
+        <ul>
+          <li>Users can clear logs from the popup.</li>
+          <li>Users can change or remove saved profile values at any time.</li>
+          <li>Users can uninstall the extension to remove local extension data stored by the extension.</li>
+        </ul>
+      </section>
+
+      <section class="section">
+        <h2>7. Contact</h2>
+        <p>
+          For privacy questions, contact the publisher through the support contact or store listing provided with the extension.
+        </p>
+        <p>
+          Contact: replace this line with your support email before publishing.
+        </p>
+      </section>
+    </div>
+
+    <div class="callout">
+      This policy is intended for store submission and public hosting. Keep the published URL accessible for Chrome Web Store and Microsoft Edge Add-ons review.
+    </div>
+
+    <p class="footer">
+      © 2026 Diary Made Easy [VTU]. All rights reserved.
+    </p>
+  </main>
+</body>
+</html>

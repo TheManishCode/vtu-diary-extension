@@ -1,0 +1,38 @@
+﻿[
+    {
+        "Date":  "2026-01-28",
+        "Hours":  7,
+        "Work Description":  "Participated in the official onboarding and orientation session of the Bharat Unnati AI Fellowship. The session provided a comprehensive overview of the internship structure, objectives, deliverables, and evaluation criteria. I reviewed the learning roadmap covering Generative AI, prompt engineering, and agent-based systems. Additionally, I completed the setup of required development tools, platforms, and accounts necessary for hands-on practice. I also familiarized myself with communication channels, submission workflows, and collaboration guidelines to ensure smooth participation throughout the internship.",
+        "Learnings":  "Developed a strong understanding of the internship framework, expectations, and workflow. Gained practical experience in setting up development environments and learned how structured onboarding contributes to effective project execution.",
+        "Skills":  [
+                       "python"
+                   ]
+    },
+    {
+        "Date":  "2026-01-29",
+        "Hours":  7,
+        "Work Description":  "Focused on studying the fundamentals of prompt engineering with an emphasis on understanding the differences between ineffective, effective, and optimized prompts. Analyzed how factors such as clarity, specificity, context, and constraints influence AI-generated responses. Practiced creating multiple prompt variations for the same task and evaluated the differences in output quality. Explored techniques to refine prompts by improving structure, defining roles, and specifying expected formats. Also examined real-world use cases where prompt engineering enhances productivity and accuracy in AI systems.",
+        "Learnings":  "Gained a solid foundation in prompt engineering principles and learned how structured and well-defined prompts significantly improve the relevance, accuracy, and consistency of AI-generated outputs.",
+        "Skills":  [
+                       "python"
+                   ]
+    },
+    {
+        "Date":  "2026-01-30",
+        "Hours":  7,
+        "Work Description":  "Attended an in-depth session on prompt engineering that focused on analyzing and comparing different types of prompts, including poorly structured, moderately effective, and highly optimized prompts. Explored how prompt intent, clarity, and formatting influence AI behavior and response generation. Reviewed multiple case studies demonstrating how small improvements in prompt design can lead to significantly better outputs. Practiced rewriting weak prompts into well-structured ones by incorporating clear instructions, constraints, and expected output formats.",
+        "Learnings":  "Strengthened understanding of prompt design strategies and learned how to systematically improve prompts to achieve more accurate, context-aware, and high-quality AI responses.",
+        "Skills":  [
+                       "python"
+                   ]
+    },
+    {
+        "Date":  "2026-01-31",
+        "Hours":  7,
+        "Work Description":  "Continued hands-on practice in prompt engineering by applying previously learned concepts to a variety of scenarios. Focused on improving prompt clarity, defining precise intent, and structuring outputs effectively. Experimented with different prompt styles, including role-based prompts, instruction-based prompts, and constraint-driven prompts, to observe their impact on AI responses. Analyzed the variations in outputs and identified patterns that contribute to more reliable and meaningful results. Also worked on refining prompts iteratively to achieve optimal performance.",
+        "Learnings":  "Enhanced practical skills in designing and optimizing prompts. Developed the ability to systematically refine prompts to produce consistent, high-quality, and contextually relevant AI outputs.",
+        "Skills":  [
+                       "python"
+                   ]
+    }
+]

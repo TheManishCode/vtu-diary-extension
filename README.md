@@ -91,3 +91,10 @@ Sample file:
 - Export and upload depend on authenticated VTU cookies in your browser
 - Operations are designed to continue while popup is closed
 - Verify generated and uploaded data before final VTU submission
+
+## Affiliate Disclosure
+
+- The extension may show optional sponsored recommendations for student tools inside the extension popup only
+- Affiliate links open only on explicit user click
+- The extension does not auto-open, auto-redirect, or inject ads into VTU or other websites
+- We may earn a commission from affiliate purchases at no extra cost to users

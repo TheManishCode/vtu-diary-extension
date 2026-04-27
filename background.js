@@ -222,7 +222,6 @@ function mergeProfiles(fetchedProfile, userInput) {
 }
 
 function buildDocHtml(entries, profile) {
-  const pages = chunk(entries, 4);
   const p = normalizeProfile(profile);
 
   return `
@@ -232,55 +231,69 @@ function buildDocHtml(entries, profile) {
     <style>
       body {
         font-family: "Times New Roman";
+        font-size: 12pt;
+        color: #111;
         margin: 0;
         padding: 0;
       }
 
       .page {
-        padding: 30px;
+        width: 170mm;
+        min-height: 257mm;
+        margin: 0 auto;
+        padding: 16mm 14mm;
+        box-sizing: border-box;
         page-break-after: always;
+      }
+
+      .entry-page {
+        page-break-before: always;
+      }
+
+      p {
+        margin: 6pt 0;
+        font-size: 12pt;
+        line-height: 1.45;
       }
 
       h1 {
         text-align: center;
-        font-size: 16px;
+        font-size: 15pt;
+        font-weight: bold;
         margin: 0;
       }
 
       h2 {
         text-align: center;
-        font-size: 14px;
-        margin: 5px 0 20px;
-      }
-
-      table {
-        width: 100%;
-        border-collapse: collapse;
-      }
-
-      th, td {
-        border: 1px solid black;
-        padding: 6px;
-        font-size: 11px;
-        vertical-align: top;
-      }
-
-      th {
-        text-align: center;
+        font-size: 13pt;
         font-weight: bold;
+        margin: 4pt 0 18pt;
+      }
+
+      .meta-line {
+        margin: 4pt 0;
+      }
+
+      .section-title {
+        margin-top: 12pt;
+        margin-bottom: 4pt;
+      }
+
+      .section-text {
+        text-align: justify;
       }
 
       .footer {
-        margin-top: 40px;
+        margin-top: 26mm;
         display: flex;
         justify-content: space-between;
-        font-size: 11px;
+        font-size: 11pt;
       }
 
       .page-number {
         text-align: center;
-        margin-top: 10px;
-        font-size: 10px;
+        margin-top: 6mm;
+        font-size: 10pt;
       }
 
       .cover {
@@ -289,18 +302,18 @@ function buildDocHtml(entries, profile) {
       }
 
       .cover h1 {
-        font-size: 20px;
-        margin-bottom: 20px;
+        font-size: 20pt;
+        margin-bottom: 20pt;
       }
 
       .cover h2 {
-        font-size: 16px;
-        margin-bottom: 40px;
+        font-size: 16pt;
+        margin-bottom: 40pt;
       }
 
       .cover p {
-        font-size: 14px;
-        margin: 10px 0;
+        font-size: 14pt;
+        margin: 10pt 0;
       }
     </style>
   </head>
@@ -317,30 +330,22 @@ function buildDocHtml(entries, profile) {
     <p><b>Internship:</b> ${escapeHtml(p.internship)}</p>
   </div>
 
-  ${pages.map((group, i) => `
-    <div class="page">
+  ${entries.map((e, i) => `
+    <div class="page entry-page">
 
       <h1>VISVESVARAYA TECHNOLOGICAL UNIVERSITY</h1>
       <h2>INTERNSHIP DIARY</h2>
 
-      <table>
-        <tr>
-          <th>Date</th>
-          <th>Hours</th>
-          <th>Work Summary</th>
-          <th>Learning Outcome</th>
-        </tr>
+      <p class="meta-line"><b>Entry:</b> ${escapeHtml(i + 1)} of ${escapeHtml(entries.length)}</p>
 
-        ${group.map((e) => `
-          <tr>
-            <td>${escapeHtml(e.date)}</td>
-            <td>${escapeHtml(e.hours)}</td>
-            <td>${escapeHtml(e.activity)}</td>
-            <td>${escapeHtml(e.learning || generateLearning(e.activity))}</td>
-          </tr>
-        `).join("")}
+      <p class="meta-line"><b>DATE:</b> ${escapeHtml(e.date || "-")}</p>
+      <p class="meta-line"><b>Number of hours:</b> ${escapeHtml(e.hours || "-")}</p>
 
-      </table>
+      <p class="section-title"><b>Description:</b></p>
+      <p class="section-text">${escapeHtml(e.activity || "-")}</p>
+
+      <p class="section-title"><b>Learnings/outcomes:</b></p>
+      <p class="section-text">${escapeHtml(e.learning || generateLearning(e.activity || ""))}</p>
 
       <div class="footer">
         <div>Signature of External Coordinator</div>
@@ -348,7 +353,7 @@ function buildDocHtml(entries, profile) {
       </div>
 
       <div class="page-number">
-        Page ${i + 1} of ${pages.length}
+        Page ${i + 1} of ${entries.length}
       </div>
 
     </div>
@@ -369,66 +374,81 @@ function drawPdf(entries, profile) {
     doc.text(String(text || ""), 105, y, { align: "center" });
   }
 
-  function drawCellText(text, x, y, w, h, fontSize) {
-    const content = safeText(text) || "-";
-    doc.setFont("times", "normal");
-    doc.setFontSize(fontSize);
-    const lines = doc.splitTextToSize(content, w - 3);
-    const maxLines = Math.max(1, Math.floor((h - 4) / 4.5));
-    doc.text(lines.slice(0, maxLines), x + 1.5, y + 4);
-  }
+  // Cover page styling
+  centerText("VISVESVARAYA TECHNOLOGICAL UNIVERSITY", 42, 18, true);
+  centerText("INTERNSHIP DIARY", 56, 15, true);
+  doc.setLineWidth(0.6);
+  doc.line(25, 63, 185, 63);
 
-  centerText("VISVESVARAYA TECHNOLOGICAL UNIVERSITY", 45, 18, true);
-  centerText("INTERNSHIP DIARY", 58, 15, true);
+  doc.setFont("times", "italic");
+  doc.setFontSize(11);
+  centerText("Internship Progress Record", 72, 11, false);
+
+  doc.setDrawColor(0, 0, 0);
+  doc.setLineWidth(0.4);
+  doc.roundedRect(22, 86, 166, 66, 2, 2);
+
+  doc.setFont("times", "bold");
+  doc.setFontSize(12);
+  doc.text("Student Details", 30, 97);
+
   doc.setFont("times", "normal");
-  doc.setFontSize(13);
-  doc.text(`Name: ${p.name}`, 30, 95);
-  doc.text(`USN: ${p.usn}`, 30, 108);
-  doc.text(`College: ${p.college}`, 30, 121);
-  doc.text(`Internship: ${p.internship}`, 30, 134);
+  doc.setFontSize(12);
+  doc.text(`Name: ${p.name}`, 30, 109);
+  doc.text(`USN: ${p.usn}`, 30, 120);
+  doc.text(`College: ${p.college}`, 30, 131, { maxWidth: 150 });
+  doc.text(`Internship: ${p.internship}`, 30, 142, { maxWidth: 150 });
 
-  const pages = chunk(entries, 4);
-  const colWidths = [28, 20, 71, 71];
-  const tableX = 10;
-  const tableTop = 34;
-  const headerH = 10;
-  const rowH = 34;
-
-  pages.forEach((group, i) => {
+  entries.forEach((e, i) => {
     doc.addPage();
 
     centerText("VISVESVARAYA TECHNOLOGICAL UNIVERSITY", 14, 13, true);
     centerText("INTERNSHIP DIARY", 21, 12, true);
 
-    const headers = ["Date", "Hours", "Work Summary", "Learning Outcome"];
-    let x = tableX;
+    let y = 30;
+    const left = 20;
+    const maxWidth = 170;
 
-    for (let c = 0; c < 4; c += 1) {
-      doc.rect(x, tableTop, colWidths[c], headerH);
-      doc.setFont("times", "bold");
-      doc.setFontSize(10);
-      doc.text(headers[c], x + colWidths[c] / 2, tableTop + 6.5, { align: "center" });
-      x += colWidths[c];
-    }
+    doc.setFont("times", "normal");
+    doc.setFontSize(11);
+    doc.text(`Entry: ${i + 1} of ${entries.length}`, left, y);
 
-    for (let r = 0; r < 4; r += 1) {
-      const y = tableTop + headerH + r * rowH;
-      x = tableX;
-      for (let c = 0; c < 4; c += 1) {
-        doc.rect(x, y, colWidths[c], rowH);
-        x += colWidths[c];
-      }
+    y += 10;
 
-      const e = group[r];
-      if (!e) {
-        continue;
-      }
+    doc.setFont("times", "bold");
+    doc.setFontSize(14);
+    doc.text(`DATE: ${safeText(e.date) || "-"}`, left, y);
 
-      drawCellText(e.date, tableX, y, colWidths[0], rowH, 10);
-      drawCellText(e.hours, tableX + colWidths[0], y, colWidths[1], rowH, 10);
-      drawCellText(e.activity, tableX + colWidths[0] + colWidths[1], y, colWidths[2], rowH, 9);
-      drawCellText(e.learning || generateLearning(e.activity), tableX + colWidths[0] + colWidths[1] + colWidths[2], y, colWidths[3], rowH, 9);
-    }
+    y += 10;
+
+    doc.setFont("times", "normal");
+    doc.setFontSize(12);
+    doc.text(`Number of hours: ${safeText(e.hours) || "-"}`, left, y);
+
+    y += 12;
+
+    doc.setFont("times", "bold");
+    doc.text("Description:", left, y);
+
+    y += 8;
+
+    doc.setFont("times", "normal");
+    const desc = doc.splitTextToSize(safeText(e.activity) || "-", maxWidth);
+    doc.text(desc, left, y);
+
+    y += desc.length * 6 + 6;
+
+    doc.setFont("times", "bold");
+    doc.text("Learnings/outcomes:", left, y);
+
+    y += 8;
+
+    doc.setFont("times", "normal");
+    const learn = doc.splitTextToSize(
+      safeText(e.learning || generateLearning(e.activity)) || "-",
+      maxWidth
+    );
+    doc.text(learn, left, y);
 
     doc.setFont("times", "normal");
     doc.setFontSize(10);
@@ -436,7 +456,7 @@ function drawPdf(entries, profile) {
     doc.text("Signature of Internship Coordinator", 200, 252, { align: "right" });
 
     doc.setFontSize(9);
-    doc.text(`Page ${i + 1} of ${pages.length}`, 105, 286, { align: "center" });
+    doc.text(`Page ${i + 1} of ${entries.length}`, 105, 286, { align: "center" });
   });
 
   return doc;
