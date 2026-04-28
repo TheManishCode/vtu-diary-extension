@@ -1,0 +1,23 @@
+﻿[
+  {
+    "Date": "2026-04-24",
+    "Hours": 5,
+    "Work Description": "Learned conditional workflows using IF/ELSE logic in N8N. Built branching automation and studied use case decomposition and node chaining.",
+    "Learnings": "Improved understanding of branching workflows and developer-style thinking in automation.",
+    "Skills": ["python"]
+  },
+  {
+    "Date": "2026-04-25",
+    "Hours": 4.5,
+    "Work Description": "Revised conditional workflows, node connections, and automation logic. Strengthened project workflow ideas.",
+    "Learnings": "Reinforced workflow logic and improved readiness for implementation.",
+    "Skills": ["python"]
+  },
+  {
+    "Date": "2026-04-27",
+    "Hours": 4.5,
+    "Work Description": "Revised Agentic AI concepts, practiced workflow structures, and refined prompts. Organized workflows into larger automation systems.",
+    "Learnings": "Improved understanding of connecting workflows and structuring automation systems.",
+    "Skills": ["python"]
+  }
+]

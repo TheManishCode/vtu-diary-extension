@@ -310,6 +310,9 @@ document.addEventListener("DOMContentLoaded", () => {
     if (/internship-applys/i.test(text)) {
       return "Internship context resolved.";
     }
+    if (/internship_id still not found/i.test(text) || /will attempt upload anyway/i.test(text)) {
+      return "Internship ID could not be resolved. Upload was stopped.";
+    }
     if (/Internship ID:/i.test(text)) {
       return "Internship mapping resolved.";
     }

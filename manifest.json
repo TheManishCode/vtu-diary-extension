@@ -2,8 +2,8 @@
   "manifest_version": 3,
   "name": "Diary Made Easy [VTU]",
   "short_name": "EasyDiary",
-  "description": "VTU internship diary assistant to generate entries, bulk upload JSON, fetch diaries, and export clean PDF reports. Includes optional affiliate links for student tools.",
-  "version": "3.0.2",
+  "description": "Export VTU internship diaries, generate PDF/DOC reports, and bulk upload entries from JSON using your active VTU session.",
+  "version": "3.0.3",
   "permissions": ["activeTab", "scripting", "downloads", "storage"],
   "host_permissions": [
     "https://vtu.internyet.in/*",

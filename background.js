@@ -637,29 +637,99 @@ async function uploadEntries(tabId, rawEntries) {
         }
       }
 
+      function pickInternshipIdFromDiaryList(json) {
+        const list = json?.data?.data || json?.data || [];
+        if (!Array.isArray(list) || list.length === 0) {
+          return null;
+        }
+
+        const withId = list.find((item) => item?.internship_id);
+        return withId?.internship_id ? String(withId.internship_id) : null;
+      }
+
+      function pickInternshipIdFromDom() {
+        const selects = Array.from(document.querySelectorAll("select"));
+
+        for (const select of selects) {
+          const value = clean(select.value);
+          if (value && /^\d+$/.test(value)) {
+            return value;
+          }
+
+          const labelText = clean(
+            select.name ||
+            select.id ||
+            select.getAttribute("aria-label") ||
+            select.closest("label")?.textContent ||
+            ""
+          );
+
+          const internshipOption = Array.from(select.options || []).find((option) => {
+            const optionValue = clean(option.value);
+            const optionText = clean(option.textContent || option.label || "");
+            return /^\d+$/.test(optionValue) && /internship/i.test(optionText);
+          });
+
+          if (internshipOption?.value) {
+            return clean(internshipOption.value);
+          }
+
+          if (/internship/i.test(labelText) && value) {
+            return value;
+          }
+        }
+
+        const attrEl = document.querySelector(
+          '[data-internship-id], meta[name="internship-id"], meta[name="internship_id"]'
+        );
+        if (attrEl) {
+          return clean(attrEl.getAttribute("content") || attrEl.dataset.internshipId || "");
+        }
+
+        return null;
+      }
+
       rlog("🔍 Resolving required IDs...");
       let internshipId = null;
 
-      try {
-        const candidates = [
-          window.__NEXT_DATA__,
-          window.__INITIAL_STATE__,
-          window.__APP_STATE__,
-          window.initialData
-        ];
-        for (const state of candidates) {
-          if (!state) continue;
-          const raw = JSON.stringify(state);
-          const m = raw.match(/"internship_id"\s*:\s*(\d+)/);
-          if (m) { internshipId = m[1]; break; }
+      if (!internshipId) {
+        rlog("  trying authenticated diary list first...");
+        const diaryListJson = await fetchJson("https://vtuapi.internyet.in/api/v1/student/internship-diaries");
+        internshipId = pickInternshipIdFromDiaryList(diaryListJson);
+        if (internshipId) {
+          rlog(`  ✅ internship_id from diary list: ${internshipId}`);
         }
-      } catch (_) {}
+      }
+
+      if (!internshipId) {
+        try {
+          const candidates = [
+            window.__NEXT_DATA__,
+            window.__INITIAL_STATE__,
+            window.__APP_STATE__,
+            window.initialData
+          ];
+          for (const state of candidates) {
+            if (!state) continue;
+            const raw = JSON.stringify(state);
+            const m = raw.match(/"internship_id"\s*:\s*(\d+)/);
+            if (m) { internshipId = m[1]; break; }
+          }
+        } catch (_) {}
+      }
 
       if (!internshipId) {
         const metaEl = document.querySelector(
           'meta[name="internship-id"], meta[name="internship_id"], [data-internship-id]'
         );
         if (metaEl) internshipId = metaEl.getAttribute("content") || metaEl.dataset.internshipId;
+      }
+
+      if (!internshipId) {
+        internshipId = pickInternshipIdFromDom();
+        if (internshipId) {
+          rlog(`  ✅ internship_id from DOM: ${internshipId}`);
+        }
       }
 
       if (!internshipId) {
@@ -831,7 +901,8 @@ async function uploadEntries(tabId, rawEntries) {
       const moodDefault = "5";
 
       if (!internshipId) {
-        rlog("⚠️ internship_id still not found — will attempt upload anyway to get exact 422 detail");
+        rlog("❌ internship_id could not be resolved. Open the VTU internship diary/application page and retry.");
+        throw new Error("internship_id not resolved");
       }
       
       const summary = {
