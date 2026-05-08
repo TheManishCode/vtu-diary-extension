@@ -13,22 +13,36 @@ document.addEventListener("DOMContentLoaded", () => {
   const usnEl = document.getElementById("usn");
   const collegeEl = document.getElementById("college");
   const internshipEl = document.getElementById("internship");
+  const internshipIdEl = document.getElementById("internshipId");
+  const internshipSelectEl = document.getElementById("internshipSelect");
+  const refreshInternshipsBtn = document.getElementById("refreshInternships");
   const jsonFileEl = document.getElementById("jsonFile");
+  const fileDropZoneEl = document.getElementById("fileDropZone");
+  const fileSelectedEl = document.getElementById("fileSelected");
+  const fileSelectedNameEl = document.getElementById("fileSelectedName");
+  const fileSelectedClearEl = document.getElementById("fileSelectedClear");
+  const jsonPreviewEl = document.getElementById("jsonPreview");
+  const uploadProgressEl = document.getElementById("uploadProgress");
+  const progressBarFillEl = document.getElementById("progressBarFill");
+  const progressTextEl = document.getElementById("progressText");
+  const sessionBadgeEl = document.getElementById("sessionBadge");
   const generateBtn = document.getElementById("generate");
   const uploadBtn = document.getElementById("upload");
   const saveProfileBtn = document.getElementById("saveProfile");
   const clearFileBtn = document.getElementById("clearFile");
   const clearLogsBtn = document.getElementById("clearLogs");
   const downloadExampleBtn = document.getElementById("downloadExample");
-  const affiliateCardEl = document.getElementById("affiliateCard");
 
   const PROFILE_KEY = "vtu_profile_overrides";
   const LOG_STORAGE_KEY = "vtu_runtime_logs";
   const LOCAL_LOGS_KEY = "vtu_popup_logs_local";
-  const AFFILIATE_UNLOCK_KEY = "vtu_affiliate_unlocked";
   const MAX_LOCAL_LOGS = 500;
+  const INTERNSHIP_OPTIONS_KEY = "vtu_upload_internship_options";
 
   let isBusy = false;
+  let internshipFetchInProgress = false;
+  let currentUploadTotal = 0;
+  let currentUploadCount = 0;
 
   function moveInk(tabEl) {
     if (!tabInkEl || !tabEl) {
@@ -68,6 +82,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (tabEl.dataset.view === "lg") {
       clearLogBadge();
+    }
+
+    if (tabEl.dataset.view === "up") {
+      const hasLoadedOptions = !!(internshipSelectEl && internshipSelectEl.options.length > 1);
+      if (!hasLoadedOptions && !internshipFetchInProgress) {
+        void refreshInternshipOptions({ silent: true });
+      }
     }
   }
 
@@ -115,6 +136,16 @@ document.addEventListener("DOMContentLoaded", () => {
     if (saveProfileBtn) saveProfileBtn.disabled = isBusy;
     if (clearFileBtn) clearFileBtn.disabled = isBusy;
     if (downloadExampleBtn) downloadExampleBtn.disabled = isBusy;
+
+    // Show/hide cancel button based on upload state
+    const cancelBtn = document.getElementById('cancelUpload');
+    if (isBusy && label && label.includes("Uploading")) {
+      if (uploadBtn) uploadBtn.style.display = 'none';
+      if (cancelBtn) cancelBtn.style.display = 'block';
+    } else {
+      if (uploadBtn) uploadBtn.style.display = 'block';
+      if (cancelBtn) cancelBtn.style.display = 'none';
+    }
 
     updateStatus(label, isBusy);
 
@@ -372,7 +403,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function saveProfile() {
-    if (!nameEl || !usnEl || !collegeEl || !internshipEl) {
+    if (!nameEl || !usnEl || !collegeEl || !internshipEl || !internshipIdEl) {
       return;
     }
 
@@ -380,7 +411,9 @@ document.addEventListener("DOMContentLoaded", () => {
       name: nameEl.value.trim(),
       usn: usnEl.value.trim(),
       college: collegeEl.value.trim(),
-      internship: internshipEl.value.trim()
+      internship: internshipEl.value.trim(),
+      internshipId: internshipIdEl.value.trim(),
+      selectedInternshipId: internshipSelectEl?.value || ""
     };
 
     localStorage.setItem(PROFILE_KEY, JSON.stringify(profileInput));
@@ -388,7 +421,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function loadProfile() {
-    if (!nameEl || !usnEl || !collegeEl || !internshipEl) {
+    if (!nameEl || !usnEl || !collegeEl || !internshipEl || !internshipIdEl) {
       return;
     }
 
@@ -403,8 +436,336 @@ document.addEventListener("DOMContentLoaded", () => {
       usnEl.value = data.usn || "";
       collegeEl.value = data.college || "";
       internshipEl.value = data.internship || "";
+      internshipIdEl.value = data.internshipId || "";
+      if (internshipSelectEl && data.selectedInternshipId) {
+        internshipSelectEl.dataset.pendingSelectedId = String(data.selectedInternshipId);
+      }
     } catch (_) {
       appendLog("Could not load saved profile", "warn");
+    }
+  }
+
+  function getSelectedInternship() {
+    if (!internshipSelectEl) {
+      return { id: "", name: "" };
+    }
+
+    const selectedId = internshipSelectEl.value || "";
+    if (!selectedId) {
+      return { id: "", name: "" };
+    }
+
+    const option = internshipSelectEl.options[internshipSelectEl.selectedIndex];
+    return {
+      id: selectedId,
+      name: option?.textContent?.trim() || ""
+    };
+  }
+
+  function readCachedInternshipOptions() {
+    try {
+      const raw = localStorage.getItem(INTERNSHIP_OPTIONS_KEY);
+      if (!raw) {
+        return [];
+      }
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) {
+        return [];
+      }
+      return parsed
+        .filter((item) => item && /^\d+$/.test(String(item.id || "")))
+        .map((item) => ({ id: String(item.id), name: String(item.name || `Internship ${item.id}`) }));
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function writeCachedInternshipOptions(options) {
+    try {
+      localStorage.setItem(INTERNSHIP_OPTIONS_KEY, JSON.stringify(options));
+    } catch (_) {
+      // Ignore cache write failures.
+    }
+  }
+
+  function renderInternshipOptions(options) {
+    if (!internshipSelectEl) {
+      return;
+    }
+
+    const list = Array.isArray(options) ? options : [];
+    const pendingFromProfile = internshipSelectEl.dataset.pendingSelectedId || "";
+    const currentSelection = internshipSelectEl.value || pendingFromProfile || "";
+
+    internshipSelectEl.innerHTML = "";
+
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = list.length
+      ? "Select enrolled internship"
+      : "No internships loaded";
+    internshipSelectEl.appendChild(placeholder);
+
+    list.forEach((item) => {
+      const option = document.createElement("option");
+      option.value = String(item.id);
+      option.textContent = String(item.name || `Internship ${item.id}`);
+      internshipSelectEl.appendChild(option);
+    });
+
+    if (currentSelection && list.some((item) => String(item.id) === String(currentSelection))) {
+      internshipSelectEl.value = String(currentSelection);
+    } else if (list.length === 1) {
+      internshipSelectEl.value = String(list[0].id);
+    }
+
+    delete internshipSelectEl.dataset.pendingSelectedId;
+    internshipSelectEl.disabled = !list.length;
+  }
+
+  function setInternshipSelectLoading() {
+    if (!internshipSelectEl) {
+      return;
+    }
+
+    internshipSelectEl.innerHTML = "";
+    const loading = document.createElement("option");
+    loading.value = "";
+    loading.textContent = "Loading internships...";
+    internshipSelectEl.appendChild(loading);
+    internshipSelectEl.disabled = true;
+  }
+
+  // NEW HELPER FUNCTIONS
+
+  function updateSessionBadge() {
+    if (!sessionBadgeEl) {
+      return;
+    }
+
+    chrome.tabs.query({ url: "*://internship.vtu.edu.in/*" }, (tabs) => {
+      const isActive = tabs && tabs.length > 0;
+      if (isActive) {
+        sessionBadgeEl.classList.add("active");
+        sessionBadgeEl.textContent = "VTU Active";
+      } else {
+        sessionBadgeEl.classList.remove("active");
+        sessionBadgeEl.textContent = "VTU Not Active";
+      }
+    });
+  }
+
+  function validateJsonEntry(entry) {
+    if (!entry || typeof entry !== "object") {
+      return false;
+    }
+
+    const date = String(entry.date || entry.Date || "").trim();
+    const hours = Number(entry.hours || entry.Hours || entry.hours_worked || "");
+    const description = String(
+      entry.description ||
+      entry.activity ||
+      entry.work_description ||
+      entry.workDescription ||
+      entry["Work Description"] ||
+      ""
+    ).trim();
+
+    return /^\d{4}-\d{2}-\d{2}$/.test(date) && Number.isFinite(hours) && hours > 0 && hours <= 24 && !!description;
+  }
+
+  function showJsonPreview(data) {
+    if (!jsonPreviewEl) {
+      return;
+    }
+
+    try {
+      const normalized = Array.isArray(data) ? data : (data && typeof data === "object" ? [data] : []);
+      
+      if (!normalized.length) {
+        jsonPreviewEl.innerHTML = '<div class="preview-message">Invalid JSON structure</div>';
+        return;
+      }
+
+      const validEntries = normalized.filter((entry) => validateJsonEntry(entry));
+      const invalidCount = normalized.length - validEntries.length;
+
+      let previewHtml = `<div class="preview-header">Preview: ${validEntries.length} valid entries`;
+      if (invalidCount > 0) {
+        previewHtml += ` <span class="preview-warning">(${invalidCount} invalid)</span>`;
+      }
+      previewHtml += "</div>";
+
+      previewHtml += '<div class="preview-list">';
+      validEntries.slice(0, 5).forEach((entry, index) => {
+        const description = String(
+          entry.description ||
+          entry.activity ||
+          entry.work_description ||
+          entry.workDescription ||
+          entry["Work Description"] ||
+          "Untitled"
+        ).trim();
+        previewHtml += `
+          <div class="preview-item">
+            <span class="preview-index">${index + 1}.</span>
+            <span class="preview-title">${description || "Untitled"}</span>
+            <span class="preview-date">${String(entry.date || entry.Date || "No date")}</span>
+          </div>
+        `;
+      });
+
+      if (validEntries.length > 5) {
+        previewHtml += `<div class="preview-more">... and ${validEntries.length - 5} more entries</div>`;
+      }
+
+      previewHtml += "</div>";
+      jsonPreviewEl.innerHTML = previewHtml;
+    } catch (error) {
+      jsonPreviewEl.innerHTML = '<div class="preview-message error">Failed to parse preview</div>';
+    }
+  }
+
+  function handleFileSelect(file) {
+    if (!file) {
+      return;
+    }
+
+    if (!file.name.endsWith(".json")) {
+      appendLog("Please select a valid JSON file", "error");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const data = JSON.parse(event.target.result);
+        
+        if (fileSelectedEl && fileSelectedNameEl) {
+          fileSelectedEl.style.display = "block";
+          fileSelectedNameEl.textContent = file.name;
+        }
+
+        showJsonPreview(data);
+        appendLog(`JSON file loaded: ${file.name}`, "success");
+      } catch (error) {
+        appendLog("Invalid JSON file: " + (error?.message || "Parse failed"), "error");
+        if (fileSelectedEl) {
+          fileSelectedEl.style.display = "none";
+        }
+        if (jsonPreviewEl) {
+          jsonPreviewEl.innerHTML = "";
+        }
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  function setupDragAndDrop() {
+    if (!fileDropZoneEl) {
+      return;
+    }
+
+    fileDropZoneEl.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      fileDropZoneEl.classList.add("dragover");
+    });
+
+    fileDropZoneEl.addEventListener("dragleave", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      fileDropZoneEl.classList.remove("dragover");
+    });
+
+    fileDropZoneEl.addEventListener("drop", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      fileDropZoneEl.classList.remove("dragover");
+
+      const files = e.dataTransfer?.files;
+      if (files && files[0]) {
+        if (jsonFileEl) {
+          const dataTransfer = new DataTransfer();
+          dataTransfer.items.add(files[0]);
+          jsonFileEl.files = dataTransfer.files;
+        }
+        handleFileSelect(files[0]);
+      }
+    });
+  }
+
+  function updateUploadProgress(current, total) {
+    currentUploadCount = current;
+    currentUploadTotal = total;
+
+    if (!uploadProgressEl || !progressBarFillEl || !progressTextEl) {
+      return;
+    }
+
+    const percentage = total > 0 ? (current / total) * 100 : 0;
+    progressBarFillEl.style.width = percentage + "%";
+    progressTextEl.textContent = `${current}/${total}`;
+
+    if (percentage === 100) {
+      uploadProgressEl.classList.add("complete");
+    } else {
+      uploadProgressEl.classList.remove("complete");
+    }
+  }
+
+  async function refreshInternshipOptions(options = {}) {
+    if (!refreshInternshipsBtn) {
+      return;
+    }
+
+    const silent = options?.silent === true;
+    if (internshipFetchInProgress) {
+      return;
+    }
+
+    internshipFetchInProgress = true;
+    setInternshipSelectLoading();
+
+    refreshInternshipsBtn.disabled = true;
+    if (!silent) {
+      appendLog("Fetching enrolled internships...", "info");
+    }
+
+    try {
+      const response = await sendRuntimeMessage({ type: "get_upload_internships" });
+      if (!response?.ok) {
+        throw new Error(response?.error || "Could not load internships");
+      }
+
+      const internships = Array.isArray(response.internships) ? response.internships : [];
+      if (!internships.length) {
+        renderInternshipOptions([]);
+        if (!silent) {
+          appendLog("No enrolled internships found. Use manual internship ID fallback.", "warn");
+        }
+        return;
+      }
+
+      const compact = internships.map((item) => ({
+        id: String(item.id),
+        name: String(item.name || `Internship ${item.id}`)
+      }));
+
+      renderInternshipOptions(compact);
+      writeCachedInternshipOptions(compact);
+      if (!silent) {
+        appendLog(`Loaded ${compact.length} enrolled internship(s)`, "success");
+      }
+    } catch (error) {
+      const cached = readCachedInternshipOptions();
+      renderInternshipOptions(cached);
+      if (!silent) {
+        appendLog("Could not fetch internships from VTU: " + (error?.message || "Unknown error"), "warn");
+      }
+    } finally {
+      internshipFetchInProgress = false;
+      refreshInternshipsBtn.disabled = false;
     }
   }
 
@@ -413,36 +774,12 @@ document.addEventListener("DOMContentLoaded", () => {
       name: nameEl?.value || "",
       usn: usnEl?.value || "",
       college: collegeEl?.value || "",
-      internship: internshipEl?.value || ""
+      internship: internshipEl?.value || "",
+      internshipId: internshipIdEl?.value || ""
     };
   }
 
-  function showAffiliateCard() {
-    if (!affiliateCardEl) {
-      return;
-    }
-
-    affiliateCardEl.classList.remove("hidden");
-    affiliateCardEl.classList.add("show");
-    localStorage.setItem(AFFILIATE_UNLOCK_KEY, "1");
-  }
-
-  function restoreAffiliateCardState() {
-    try {
-      const unlocked = localStorage.getItem(AFFILIATE_UNLOCK_KEY) === "1";
-      if (unlocked) {
-        showAffiliateCard();
-      }
-    } catch (_) {
-      // Ignore localStorage failures.
-    }
-  }
-
   function finishIfTerminal(msg) {
-    if (/✅ Done!/i.test(msg)) {
-      showAffiliateCard();
-    }
-
     if (/✅ Done!|✅ Upload flow completed|❌/i.test(msg)) {
       setBusy(false, /❌/i.test(msg) ? "Needs Attention" : "Idle");
     }
@@ -490,7 +827,23 @@ document.addEventListener("DOMContentLoaded", () => {
 
         appendLog(`Uploading ${normalized.length} entries...`, "info");
         setBusy(true, "Uploading");
-        chrome.runtime.sendMessage({ type: "upload_entries", data: normalized });
+
+        const selected = getSelectedInternship();
+        const manualInternshipId = internshipIdEl?.value.trim() || "";
+        const internshipIdForUpload = selected.id || manualInternshipId;
+
+        if (!internshipIdForUpload) {
+          appendLog("Select an internship from dropdown (or use manual internship ID).", "error");
+          setBusy(false, "Needs Attention");
+          return;
+        }
+
+        chrome.runtime.sendMessage({
+          type: "upload_entries",
+          data: normalized,
+          internshipId: internshipIdForUpload,
+          internshipName: selected.name || ""
+        });
       } catch (error) {
         appendLog("Invalid JSON: " + (error?.message || "Parse failed"), "error");
         setBusy(false, "Needs Attention");
@@ -504,11 +857,25 @@ document.addEventListener("DOMContentLoaded", () => {
     };
   }
 
+  if (refreshInternshipsBtn) {
+    refreshInternshipsBtn.onclick = () => {
+      void refreshInternshipOptions({ silent: false });
+    };
+  }
+
   if (clearFileBtn) {
     clearFileBtn.onclick = () => {
       if (jsonFileEl) {
         jsonFileEl.value = "";
       }
+      if (fileSelectedEl) {
+        fileSelectedEl.style.display = "none";
+      }
+      if (jsonPreviewEl) {
+        jsonPreviewEl.innerHTML = "";
+      }
+      currentUploadTotal = 0;
+      currentUploadCount = 0;
       appendLog("File selection cleared", "info");
     };
   }
@@ -547,10 +914,10 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       try {
-        const url = chrome.runtime.getURL("examples/2026-04-14.json");
+        const url = chrome.runtime.getURL("examples/entries.json");
         await chrome.downloads.download({
           url,
-          filename: "VTU_Upload_Example_2026-04-14.json",
+          filename: "VTU_Upload_Example.json",
           saveAs: true,
           conflictAction: "uniquify"
         });
@@ -561,17 +928,80 @@ document.addEventListener("DOMContentLoaded", () => {
     };
   }
 
+  // EVENT LISTENER FOR CLEARING SELECTED FILE
+  if (fileSelectedClearEl) {
+    fileSelectedClearEl.onclick = () => {
+      if (jsonFileEl) {
+        jsonFileEl.value = "";
+      }
+      if (fileSelectedEl) {
+        fileSelectedEl.style.display = "none";
+      }
+      if (jsonPreviewEl) {
+        jsonPreviewEl.innerHTML = "";
+      }
+      currentUploadTotal = 0;
+      currentUploadCount = 0;
+      appendLog("File cleared", "info");
+    };
+  }
+
+  // EVENT LISTENER FOR FILE SELECTION
+  if (jsonFileEl) {
+    jsonFileEl.addEventListener("change", () => {
+      const file = jsonFileEl.files && jsonFileEl.files[0];
+      if (file) {
+        handleFileSelect(file);
+      }
+    });
+  }
+
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg?.type === "log") {
       appendLog(msg.text);
       finishIfTerminal(msg.text || "");
     }
+    // UPLOAD PROGRESS MESSAGE LISTENER
+    if (msg?.type === "upload_progress") {
+      updateUploadProgress(msg.current || 0, msg.total || 0);
+    }
   });
 
   loadProfile();
+  renderInternshipOptions(readCachedInternshipOptions());
   initializeTabs();
   setBusy(false, "Idle");
-  restoreAffiliateCardState();
+  void refreshInternshipOptions({ silent: true });
+
+  // INITIALIZATION: SETUP DRAG AND DROP
+  setupDragAndDrop();
+
+  // INITIALIZATION: UPDATE SESSION BADGE
+  updateSessionBadge();
+
+  // INITIALIZATION: Open a long-lived progress port (SSE-like)
+  try {
+    const progressPort = chrome.runtime.connect({ name: "vtu-progress" });
+    progressPort.onMessage.addListener((msg) => {
+      if (!msg) return;
+      if (msg.type === "upload_progress") {
+        updateUploadProgress(msg.uploaded || 0, msg.total || 0);
+      }
+      if (msg.type === "connected") {
+        // optional: show queue length
+        if (typeof msg.queueLength === "number") {
+          appendLog(`Queue length: ${msg.queueLength}`, "info");
+        }
+      }
+    });
+  } catch (e) {
+    // ignore if connect not available
+  }
+
+  // INITIALIZATION: LISTEN FOR TAB CHANGES TO UPDATE SESSION BADGE
+  chrome.tabs.onActivated.addListener(() => {
+    updateSessionBadge();
+  });
 
   (async () => {
     const restored = await restorePersistedLogs();
@@ -582,5 +1012,88 @@ document.addEventListener("DOMContentLoaded", () => {
       appendLog(`Restored ${restored} previous log entries`, "info", Date.now(), { persist: false });
       appendLog("Quick Start: 1) Keep VTU session logged in 2) Select JSON 3) Upload Entries.", "note", Date.now(), { persist: false });
     }
+    // Fetch runtime stats and config (admin endpoints)
+    try {
+      const statsRes = await sendRuntimeMessage({ type: 'get_stats' });
+      if (statsRes?.ok && statsRes.stats) {
+        appendLog(`Stats — Uploaded: ${statsRes.stats.totalUploaded || 0}, Failed: ${statsRes.stats.totalFailed || 0}`, 'info');
+        // Update stats display in settings tab
+        document.getElementById('statUploaded').textContent = statsRes.stats.totalUploaded || 0;
+        document.getElementById('statFailed').textContent = statsRes.stats.totalFailed || 0;
+        document.getElementById('statSkipped').textContent = statsRes.stats.totalSkipped || 0;
+      }
+    } catch (_) {}
+
+    try {
+      const cfgRes = await sendRuntimeMessage({ type: 'get_runtime_config' });
+      if (cfgRes?.ok && cfgRes.config) {
+        appendLog(`Config — batchSize: ${cfgRes.config.batchSize}, concurrency: ${cfgRes.config.maxConcurrentUploads}`, 'info');
+        // Update settings sliders with current config
+        document.getElementById('batchSizeRange').value = cfgRes.config.batchSize || 5;
+        document.getElementById('batchSizeVal').textContent = cfgRes.config.batchSize || 5;
+        document.getElementById('maxConcurrentRange').value = cfgRes.config.maxConcurrentUploads || 2;
+        document.getElementById('maxConcurrentVal').textContent = cfgRes.config.maxConcurrentUploads || 2;
+        document.getElementById('requestDelayRange').value = cfgRes.config.requestDelayMs || 300;
+        document.getElementById('requestDelayVal').textContent = (cfgRes.config.requestDelayMs || 300) + ' ms';
+        document.getElementById('maxRetriesRange').value = cfgRes.config.maxAttempts || 3;
+        document.getElementById('maxRetriesVal').textContent = cfgRes.config.maxAttempts || 3;
+      }
+    } catch (_) {}
   })();
+
+  // SETTINGS TAB: RANGE SLIDER UPDATES
+  document.getElementById('batchSizeRange').addEventListener('input', (e) => {
+    document.getElementById('batchSizeVal').textContent = e.target.value;
+  });
+  document.getElementById('maxConcurrentRange').addEventListener('input', (e) => {
+    document.getElementById('maxConcurrentVal').textContent = e.target.value;
+  });
+  document.getElementById('requestDelayRange').addEventListener('input', (e) => {
+    document.getElementById('requestDelayVal').textContent = e.target.value + ' ms';
+  });
+  document.getElementById('maxRetriesRange').addEventListener('input', (e) => {
+    document.getElementById('maxRetriesVal').textContent = e.target.value;
+  });
+
+  // SETTINGS TAB: SAVE SETTINGS
+  document.getElementById('saveSettings').addEventListener('click', async () => {
+    const newConfig = {
+      batchSize: parseInt(document.getElementById('batchSizeRange').value),
+      maxConcurrentUploads: parseInt(document.getElementById('maxConcurrentRange').value),
+      requestDelayMs: parseInt(document.getElementById('requestDelayRange').value),
+      maxAttempts: parseInt(document.getElementById('maxRetriesRange').value)
+    };
+    try {
+      const res = await sendRuntimeMessage({ type: 'set_runtime_config', config: newConfig });
+      if (res?.ok) {
+        appendLog('Settings saved successfully', 'success');
+      } else {
+        appendLog('Failed to save settings', 'error');
+      }
+    } catch (err) {
+      appendLog('Error saving settings: ' + err.message, 'error');
+    }
+  });
+
+  // SETTINGS TAB: CLEAR DEDUP CACHE
+  document.getElementById('clearDedup').addEventListener('click', async () => {
+    try {
+      await chrome.storage.local.remove('vtu_dedup_cache');
+      appendLog('Deduplication cache cleared', 'success');
+    } catch (err) {
+      appendLog('Error clearing cache: ' + err.message, 'error');
+    }
+  });
+
+  // UPLOAD TAB: CANCEL UPLOAD
+  document.getElementById('cancelUpload').addEventListener('click', async () => {
+    try {
+      await sendRuntimeMessage({ type: 'cancel_upload' });
+      document.getElementById('cancelUpload').style.display = 'none';
+      document.getElementById('upload').style.display = 'block';
+      appendLog('Upload cancelled', 'warn');
+    } catch (err) {
+      appendLog('Error cancelling upload: ' + err.message, 'error');
+    }
+  });
 });

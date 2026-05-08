@@ -61,7 +61,7 @@ Example:
 ```
 
 Sample file:
-- [examples/2026-04-14.json](examples/2026-04-14.json)
+- [examples/entries.json](examples/entries.json)
 
 ## Project Files
 
@@ -69,7 +69,6 @@ Sample file:
 - background.js: export/upload orchestration and runtime log handling
 - popup.html: extension popup UI
 - popup.js: UI behavior, messaging, and local profile persistence
-- content.js: keeps workflow API-driven (no legacy UI automation)
 - lib/jspdf.umd.min.js: PDF generation library
 
 ## Local Development
